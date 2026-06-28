@@ -1,3 +1,20 @@
+<div align="center">
+  <table border="1">
+    <tr>
+      <td align="center" style="padding: 20px;">
+        <h3>📢 Domain & Email Migration Notice</h3>
+        <p>From <b>July 29 th, 2026</b>, Cakradana will transition to new domains as <code>cakradana.org</code> will not be renewed:</p>
+        <p>🌐 <b>Website:</b> <a href="https://cakradana.faizath.com">cakradana.faizath.com</a> (formerly <i>cakradana.org</i>)<br>
+        ⚙️ <b>API:</b> <a href="https://cakradana-api.faizath.com">cakradana-api.faizath.com</a> (formerly <i>api.cakradana.org</i>)<br>
+        📧 <b>Email:</b> <a href="mailto:contact@cakradana.faizath.com">contact@cakradana.faizath.com</a> (formerly <i>contact@cakradana.org</i>)<br>
+        🛰️ <b>CDN:</b> <a>cakradana-cdn.faizath.com</a> (formerly <i>cdn.cakradana.org</i>)<br>
+        📈 <b>Status Pages:</b> <a href="https://status.faizath.com/status/cakradana">https://status.faizath.com/status/cakradana</a> (formerly <i>status.cakradana.org</i>)
+        </p>
+      </td>
+    </tr>
+  </table>
+</div>
+
 # 🏛️ Cakradana AI
 
 <div align="center">
