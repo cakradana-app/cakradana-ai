@@ -42,7 +42,7 @@ class DetectionLane(Protocol):
     ) -> LaneResult: ...
 
 
-class _GraphLaneAdapter:
+class GraphLaneAdapter:
     """Adapts the graph lane, which needs no feature vector, to the protocol."""
 
     name = Lane.GRAPH
@@ -83,7 +83,7 @@ class Scorer:
             ruleset, calendar=calendar, registers=registers
         )
         self.lanes: list[DetectionLane] = list(
-            lanes if lanes is not None else [_GraphLaneAdapter()]
+            lanes if lanes is not None else [GraphLaneAdapter()]
         )
         self.model_version = model_version
         self.composer = composer or ScoreComposer()
