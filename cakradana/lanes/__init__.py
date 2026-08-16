@@ -9,11 +9,21 @@ the weakest displace the strongest.
 from cakradana.lanes.anomaly import AnomalyLane, AnomalyModel, fit as fit_anomaly
 from cakradana.lanes.classifier import ClassifierLane
 from cakradana.lanes.graph import GraphLane
+from cakradana.lanes.reputation import (
+    CoverageIndex,
+    CoverageItem,
+    OperatingConditions,
+    ReputationLane,
+)
 
 __all__ = [
     "AnomalyLane",
     "AnomalyModel",
     "ClassifierLane",
+    "CoverageIndex",
+    "CoverageItem",
     "GraphLane",
+    "OperatingConditions",
+    "ReputationLane",
     "fit_anomaly",
 ]
