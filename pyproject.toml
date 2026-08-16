@@ -25,6 +25,9 @@ dev = [
     "faker>=25.0,<40.0",
 ]
 
+[project.scripts]
+cakradana = "cakradana.cli:main"
+
 [tool.setuptools.packages.find]
 include = ["cakradana*"]
 
