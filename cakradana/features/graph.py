@@ -5,7 +5,7 @@ columns were labelled as centrality measures while being verbatim copies of two
 counting columns already present. The effective feature count was twelve rather
 than sixteen, and nothing in it described network position at all.
 
-These compute degrees, pass-through behaviour, component size, and shared
+These compute degrees, pass-through behaviour, local cluster size, and shared
 counterparties for real, each bound to what was knowable at the donation's own
 date. Structure is where this domain's hardest patterns live: splitting a
 contribution shows up as convergence and routing one through an intermediary
@@ -15,7 +15,7 @@ donation's own fields.
 
 from __future__ import annotations
 
-from collections import defaultdict, deque
+from collections import deque
 from datetime import timedelta
 
 from cakradana.features.definitions import feature
@@ -147,45 +147,54 @@ def _shared_counterparty_count(ctx: RuleContext) -> int | None:
     return len(others)
 
 
+#: A node with more counterparties than this is treated as a hub and is not
+#: traversed through. A political party connects thousands of unrelated donors,
+#: so a walk that passes through one reports that every donation belongs to a
+#: single universal cluster. That is true and useless: it describes the shape of
+#: party fundraising rather than anything about the donation in hand.
+HUB_DEGREE = 25
+
+#: Ceiling on the walk. The distinction worth drawing is between a small
+#: isolated cluster and a well-connected one, not between two large numbers.
+CLUSTER_LIMIT = 200
+
+
 @feature(
-    "component_size",
+    "local_cluster_size",
     "graph",
     "int",
-    "Size of the connected component the two parties sit in",
+    "Entities reachable from this donation without passing through a hub",
     null_when="either party is unresolved",
 )
-def _component_size(ctx: RuleContext) -> int | None:
-    """How large a cluster this donation belongs to.
+def _local_cluster_size(ctx: RuleContext) -> int | None:
+    """How large a tightly-connected cluster this donation sits in.
 
-    Bounded rather than exhaustive: the search stops once the component is
-    clearly large, because the distinction that matters is between a small
-    isolated cluster and a well-connected one, not between two large numbers.
+    Routing through hubs is refused, which is what makes the number mean
+    anything. A chain of entities moving money among themselves before it
+    reaches a recipient shows up here as a small dense cluster; an ordinary
+    donor who simply gives to a party shows up as a cluster of two.
     """
     sender, receiver = ctx.donation.sender_ref, ctx.donation.receiver_ref
     if not (sender.is_resolved and receiver.is_resolved):
         return None
-    return _bounded_component_size(ctx, {sender.key, receiver.key}, limit=500)
-
-
-def _bounded_component_size(
-    ctx: RuleContext, seeds: set[str], *, limit: int
-) -> int:
-    adjacency: dict[str, set[str]] = defaultdict(set)
-    for donation in ctx.view:
-        a = donation.sender_ref.entity_id
-        b = donation.receiver_ref.entity_id
-        if a and b:
-            adjacency[a].add(b)
-            adjacency[b].add(a)
 
     seen: set[str] = set()
-    queue = deque(seeds)
-    while queue and len(seen) < limit:
+    queue = deque([sender.key, receiver.key])
+    while queue and len(seen) < CLUSTER_LIMIT:
         node = queue.popleft()
         if node in seen:
             continue
         seen.add(node)
-        queue.extend(adjacency[node] - seen)
+
+        neighbours = {
+            d.receiver_ref.entity_id for d in ctx.view.by_sender(node)
+        } | {d.sender_ref.entity_id for d in ctx.view.by_receiver(node)}
+        neighbours.discard(None)
+        neighbours.discard(node)
+        if len(neighbours) > HUB_DEGREE:
+            continue
+        queue.extend(neighbours - seen)
+
     return len(seen)
 
 

@@ -17,6 +17,7 @@ forgetting it is not possible.
 
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Iterable, Iterator, Protocol, Sequence
@@ -35,43 +36,68 @@ class DonationStore(Protocol):
     def knowable_at(self, as_of: datetime) -> PointInTimeView: ...
 
 
-class PointInTimeView:
-    """Donations the system could have known about at ``as_of``.
+class DonationIndex:
+    """Donations grouped by counterparty, each group ordered by occurrence.
 
-    Instances are cheap to create and safe to hold: they never observe
-    donations added to the underlying store afterwards.
+    Built once and shared by every view over the same store. Rebuilding these
+    groups per view turns a backfill into quadratic work — a replay of a
+    hundred thousand donations would rebuild a hundred thousand indexes of a
+    hundred thousand entries each — and a training run that cannot finish is a
+    training run nobody does.
     """
 
-    def __init__(self, donations: Sequence[Donation], as_of: datetime) -> None:
-        self._as_of = as_of
-        self._donations = tuple(
-            d
-            for d in donations
-            if d.occurred_at <= as_of and d.recorded_at <= as_of
-        )
-        self._by_sender: dict[str, list[Donation]] = defaultdict(list)
-        self._by_receiver: dict[str, list[Donation]] = defaultdict(list)
-        self._by_pair: dict[tuple[str, str], list[Donation]] = defaultdict(list)
+    __slots__ = ("donations", "by_sender", "by_receiver", "by_pair")
 
-        for donation in sorted(self._donations, key=lambda d: d.occurred_at):
+    def __init__(self, donations: Sequence[Donation]) -> None:
+        self.donations = tuple(sorted(donations, key=lambda d: d.occurred_at))
+        self.by_sender: dict[str, list[Donation]] = defaultdict(list)
+        self.by_receiver: dict[str, list[Donation]] = defaultdict(list)
+        self.by_pair: dict[tuple[str, str], list[Donation]] = defaultdict(list)
+
+        for donation in self.donations:
             sender = donation.sender_ref.entity_id
             receiver = donation.receiver_ref.entity_id
             if sender is not None:
-                self._by_sender[sender].append(donation)
+                self.by_sender[sender].append(donation)
             if receiver is not None:
-                self._by_receiver[receiver].append(donation)
+                self.by_receiver[receiver].append(donation)
             if sender is not None and receiver is not None:
-                self._by_pair[(sender, receiver)].append(donation)
+                self.by_pair[(sender, receiver)].append(donation)
+
+
+class PointInTimeView:
+    """Donations the system could have known about at ``as_of``.
+
+    A view is a bounded window onto a shared index rather than a copy. Lookups
+    binary-search the relevant group for the cutoff and then drop anything the
+    system had not yet been told about, so the cost of a query scales with one
+    counterparty's history rather than with the whole dataset.
+    """
+
+    __slots__ = ("_as_of", "_index")
+
+    def __init__(
+        self, donations: Sequence[Donation] | DonationIndex, as_of: datetime
+    ) -> None:
+        self._as_of = as_of
+        self._index = (
+            donations
+            if isinstance(donations, DonationIndex)
+            else DonationIndex(donations)
+        )
 
     @property
     def as_of(self) -> datetime:
         return self._as_of
 
+    def _visible(self, donations: Sequence[Donation]) -> tuple[Donation, ...]:
+        return self._window(donations, None, None, None)
+
     def __len__(self) -> int:
-        return len(self._donations)
+        return len(self._visible(self._index.donations))
 
     def __iter__(self) -> Iterator[Donation]:
-        return iter(self._donations)
+        return iter(self._visible(self._index.donations))
 
     # -- lookups ---------------------------------------------------------
     #
@@ -89,7 +115,9 @@ class PointInTimeView:
         until: datetime | None = None,
         excluding: str | None = None,
     ) -> tuple[Donation, ...]:
-        return self._window(self._by_sender.get(sender_id, ()), since, until, excluding)
+        return self._window(
+            self._index.by_sender.get(sender_id, ()), since, until, excluding
+        )
 
     def by_receiver(
         self,
@@ -100,7 +128,7 @@ class PointInTimeView:
         excluding: str | None = None,
     ) -> tuple[Donation, ...]:
         return self._window(
-            self._by_receiver.get(receiver_id, ()), since, until, excluding
+            self._index.by_receiver.get(receiver_id, ()), since, until, excluding
         )
 
     def by_pair(
@@ -113,21 +141,44 @@ class PointInTimeView:
         excluding: str | None = None,
     ) -> tuple[Donation, ...]:
         return self._window(
-            self._by_pair.get((sender_id, receiver_id), ()), since, until, excluding
+            self._index.by_pair.get((sender_id, receiver_id), ()),
+            since,
+            until,
+            excluding,
         )
 
-    @staticmethod
     def _window(
+        self,
         donations: Sequence[Donation],
         since: datetime | None,
         until: datetime | None,
         excluding: str | None,
     ) -> tuple[Donation, ...]:
-        result: Iterable[Donation] = donations
-        if since is not None:
-            result = (d for d in result if d.occurred_at >= since)
-        if until is not None:
-            result = (d for d in result if d.occurred_at <= until)
+        """Slice a group to a window and to what was knowable at the cutoff.
+
+        Groups are kept in occurrence order, so both ends of the window are
+        found by binary search rather than by scanning. What remains is
+        filtered on recording time in the same pass: a donation that happened
+        in January but only reached the system in June was not knowable in
+        February, and admitting it is the leak that makes a measurement
+        impossible to reproduce at serving time.
+        """
+        if not donations:
+            return ()
+
+        cutoff = self._as_of if until is None else min(until, self._as_of)
+        upper = bisect_right(donations, cutoff, key=lambda d: d.occurred_at)
+        lower = (
+            bisect_left(donations, since, key=lambda d: d.occurred_at)
+            if since is not None
+            else 0
+        )
+        if lower >= upper:
+            return ()
+
+        as_of = self._as_of
+        result: Iterable[Donation] = donations[lower:upper]
+        result = (d for d in result if d.recorded_at <= as_of)
         if excluding is not None:
             result = (d for d in result if d.donation_id != excluding)
         return tuple(result)
@@ -135,7 +186,9 @@ class PointInTimeView:
     # -- derived quantities ----------------------------------------------
 
     def sender_first_seen(self, sender_id: str) -> datetime | None:
-        history = self._by_sender.get(sender_id)
+        history = self._window(
+            self._index.by_sender.get(sender_id, ()), None, None, None
+        )
         return history[0].occurred_at if history else None
 
     def distinct_senders_to(
@@ -164,10 +217,10 @@ class PointInTimeView:
         established donors, and treating those cases alike is what makes a
         naive fan-in detector unusable on real grassroots fundraising.
         """
-        history = self._by_sender.get(sender_id)
-        # Per-sender lists are built in occurred_at order, so the earliest
-        # donation decides this without scanning.
-        return bool(history) and history[0].occurred_at < before
+        first = self.sender_first_seen(sender_id)
+        # Groups are kept in occurrence order, so the earliest visible donation
+        # decides this without scanning.
+        return first is not None and first < before
 
 
 class InMemoryDonationStore:
@@ -179,6 +232,8 @@ class InMemoryDonationStore:
 
     def __init__(self, donations: Iterable[Donation] = ()) -> None:
         self._donations: list[Donation] = list(donations)
+        self._cached: DonationIndex | None = None
+        self._cached_size = -1
 
     def add(self, donation: Donation) -> None:
         self._donations.append(donation)
@@ -190,7 +245,14 @@ class InMemoryDonationStore:
         return len(self._donations)
 
     def knowable_at(self, as_of: datetime) -> PointInTimeView:
-        return PointInTimeView(self._donations, as_of)
+        return PointInTimeView(self._index(), as_of)
+
+    def _index(self) -> DonationIndex:
+        """Build the shared index once and reuse it until the store changes."""
+        if self._cached is None or self._cached_size != len(self._donations):
+            self._cached = DonationIndex(self._donations)
+            self._cached_size = len(self._donations)
+        return self._cached
 
     def replay(self) -> Iterator[tuple[Donation, PointInTimeView]]:
         """Yield each donation with the view that was current when it arrived.
@@ -201,8 +263,11 @@ class InMemoryDonationStore:
         would hand each donation a view containing records that had not yet
         been received.
         """
-        for donation in sorted(self._donations, key=lambda d: (d.recorded_at, d.donation_id)):
-            yield donation, PointInTimeView(self._donations, donation.occurred_at)
+        index = self._index()
+        for donation in sorted(
+            self._donations, key=lambda d: (d.recorded_at, d.donation_id)
+        ):
+            yield donation, PointInTimeView(index, donation.occurred_at)
 
 
 def days_before(when: datetime, days: int) -> datetime:
