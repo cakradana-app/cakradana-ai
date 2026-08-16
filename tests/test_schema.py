@@ -24,7 +24,7 @@ from cakradana.schema import (
     Provenance,
     TemporalPrecision,
 )
-from tests.conftest import WIB, at, make_donation
+from tests.conftest import at, make_donation
 
 
 class TestDonationTimestamps:

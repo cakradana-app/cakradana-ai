@@ -1,0 +1,537 @@
+# Published rule set. Immutable once released: a change creates a new version
+# so that historical scores stay explicable by the rules that produced them.
+#
+# No Tier-1 rule in this set carries `verified_by`. The thresholds and article
+# references below are drawn from project source documents and are consistent
+# across them, but consistency is not verification. Until a qualified reviewer
+# checks each against the consolidated statutory text, the engine reports these
+# rules as indeterminate rather than asserting an unverified legal fact about a
+# named person. Verification is recorded per rule, not per set, so rules can be
+# released as they are cleared.
+
+version: rules-2026.07
+notes: >
+  Initial catalogue. Tier 1 states statutory tests; Tier 2 states behavioural
+  heuristics used as weak supervision. Tier-2 parameters are provisional and
+  are calibrated against confirmed labels rather than treated as constants.
+
+rules:
+
+  # ---------------------------------------------------------------------
+  # Tier 1 — statutory limits, single transaction
+  # ---------------------------------------------------------------------
+
+  - id: RULE-T1-01
+    tier: 1
+    title: Individual donation to a political party exceeds the annual limit
+    typology: T-01
+    legal_basis:
+      statute: UU No. 2/2011 (mengubah UU No. 2/2008) tentang Partai Politik
+      article: Pasal 35 ayat (1) huruf b
+      threshold_idr: 200000000
+      period: annual
+    effective:
+      from: 2011-01-01
+    applies_when:
+      sender_type: [individual]
+      receiver_type: [political-party]
+      regime: party_annual
+    test:
+      kind: threshold
+    outcome:
+      result: LEGAL_FINDING
+      severity: statutory_violation
+      reason_template: >
+        Donation of {amount} from an individual to a political party exceeds
+        the annual limit of {threshold} under {statute} {article}.
+    requires_fields: [sender_type, receiver_type, amount, date]
+    on_missing_field: INDETERMINATE
+
+  - id: RULE-T1-02
+    tier: 1
+    title: Company donation to a political party exceeds the annual limit
+    typology: T-01
+    legal_basis:
+      statute: UU No. 2/2011 (mengubah UU No. 2/2008) tentang Partai Politik
+      article: Pasal 35 ayat (1) huruf c
+      threshold_idr: 800000000
+      period: annual
+    effective:
+      from: 2011-01-01
+    applies_when:
+      sender_type: [corporation, organization]
+      receiver_type: [political-party]
+      regime: party_annual
+    test:
+      kind: threshold
+    outcome:
+      result: LEGAL_FINDING
+      severity: statutory_violation
+      reason_template: >
+        Donation of {amount} from a company or organisation to a political
+        party exceeds the annual limit of {threshold} under {statute}
+        {article}.
+    requires_fields: [sender_type, receiver_type, amount, date]
+    on_missing_field: INDETERMINATE
+
+  - id: RULE-T1-03
+    tier: 1
+    title: Individual campaign donation exceeds the campaign-period limit
+    typology: T-01
+    legal_basis:
+      statute: UU No. 7/2017 tentang Pemilihan Umum; PKPU No. 18/2023
+      article: Pasal 327 ayat (1)
+      threshold_idr: 2500000000
+      period: campaign
+    effective:
+      from: 2017-08-16
+    applies_when:
+      sender_type: [individual]
+      regime: campaign
+    test:
+      kind: threshold
+    outcome:
+      result: LEGAL_FINDING
+      severity: statutory_violation
+      reason_template: >
+        Campaign donation of {amount} from an individual exceeds the
+        campaign-period limit of {threshold} under {statute} {article}.
+    requires_fields: [sender_type, amount, date, electoral_context]
+    on_missing_field: INDETERMINATE
+
+  - id: RULE-T1-04
+    tier: 1
+    title: Corporate or group campaign donation exceeds the campaign-period limit
+    typology: T-01
+    legal_basis:
+      statute: UU No. 7/2017 tentang Pemilihan Umum; PKPU No. 18/2023
+      article: Pasal 327 ayat (2)
+      threshold_idr: 25000000000
+      period: campaign
+    effective:
+      from: 2017-08-16
+    applies_when:
+      sender_type: [corporation, organization]
+      regime: campaign
+    test:
+      kind: threshold
+    outcome:
+      result: LEGAL_FINDING
+      severity: statutory_violation
+      reason_template: >
+        Campaign donation of {amount} from a company, group, or non-government
+        entity exceeds the campaign-period limit of {threshold} under {statute}
+        {article}.
+    requires_fields: [sender_type, amount, date, electoral_context]
+    on_missing_field: INDETERMINATE
+
+  # ---------------------------------------------------------------------
+  # Tier 1 — statutory limits, cumulative
+  #
+  # The highest-value rules in the catalogue. The limits are per donor per
+  # period, not per transaction, so a donor splitting a contribution across
+  # many compliant-looking payments breaches the cap while every individual
+  # payment passes. Nothing in the system detected this before.
+  # ---------------------------------------------------------------------
+
+  - id: RULE-T1-05
+    tier: 1
+    title: Cumulative donations from one donor to one recipient exceed the limit
+    typology: T-02
+    legal_basis:
+      statute: UU No. 2/2011 tentang Partai Politik; UU No. 7/2017 tentang Pemilu
+      article: Pasal 35 ayat (1); Pasal 327
+      period: annual
+    effective:
+      from: 2011-01-01
+    test:
+      kind: aggregate_threshold
+      group_by: [resolved_sender_id, resolved_receiver_id]
+      point_in_time: true
+    outcome:
+      result: LEGAL_FINDING
+      severity: statutory_violation
+      reason_template: >
+        Cumulative donations of {total} from {sender} to {receiver} during
+        {period_label} exceed the limit of {threshold}, across
+        {contributing_donations} donations.
+    requires_fields: [resolved_sender_id, resolved_receiver_id, amount, date]
+    on_missing_field: INDETERMINATE
+
+  - id: RULE-T1-06
+    tier: 1
+    title: Cumulative donations from one donor across all recipients exceed the cap
+    typology: T-02
+    legal_basis:
+      statute: UU No. 2/2011 tentang Partai Politik; UU No. 7/2017 tentang Pemilu
+      article: Pasal 35 ayat (1); Pasal 327
+      period: annual
+    effective:
+      from: 2011-01-01
+    test:
+      kind: aggregate_threshold
+      group_by: [resolved_sender_id]
+      point_in_time: true
+    outcome:
+      result: LEGAL_FINDING
+      severity: statutory_violation
+      reason_template: >
+        Cumulative donations of {total} from {sender} {scope} during
+        {period_label} exceed the limit of {threshold}, across
+        {contributing_donations} donations.
+    requires_fields: [resolved_sender_id, amount, date]
+    on_missing_field: INDETERMINATE
+    active: false
+    inactive_reason: >
+      Whether the statutory cap applies per recipient or across all recipients
+      within a period has not been settled by legal review. The per-recipient
+      test is unambiguous and runs; this aggregate one would change who is
+      found in breach, so it stays inactive rather than guessing.
+
+  # ---------------------------------------------------------------------
+  # Tier 1 — prohibited sources
+  # ---------------------------------------------------------------------
+
+  - id: RULE-T1-07
+    tier: 1
+    title: Donation from a foreign donor
+    typology: T-03
+    legal_basis:
+      statute: UU No. 7/2017 tentang Pemilihan Umum
+      article: Pasal 339 ayat (1) huruf a
+      period: none
+    effective:
+      from: 2017-08-16
+    test:
+      kind: foreign_jurisdiction
+      domestic_code: ID
+    outcome:
+      result: LEGAL_FINDING
+      severity: statutory_violation
+      reason_template: >
+        Donor jurisdiction is recorded as {jurisdiction}, and donations from
+        foreign parties are prohibited under {statute} {article}.
+    requires_fields: [date]
+    on_missing_field: INDETERMINATE
+
+  - id: RULE-T1-08
+    tier: 1
+    title: Donor identity is absent or unidentifiable
+    typology: T-04
+    legal_basis:
+      statute: UU No. 7/2017 tentang Pemilihan Umum
+      article: Pasal 339 ayat (1) huruf b
+      period: none
+    effective:
+      from: 2017-08-16
+    test:
+      kind: identity_absent
+    outcome:
+      result: LEGAL_FINDING
+      severity: statutory_violation
+      reason_template: >
+        Donor identity was not recorded ({source_quality}), and donations from
+        unidentified donors are prohibited under {statute} {article}.
+    requires_fields: [amount, date]
+    on_missing_field: INDETERMINATE
+
+  - id: RULE-T1-09
+    tier: 1
+    title: Donation from government, a state or regional enterprise, or a village government
+    typology: T-05
+    legal_basis:
+      statute: UU No. 7/2017 tentang Pemilihan Umum
+      article: Pasal 339 ayat (1) huruf c
+      period: none
+    effective:
+      from: 2017-08-16
+    test:
+      kind: register_membership
+      register: prohibited_source
+    outcome:
+      result: LEGAL_FINDING
+      severity: statutory_violation
+      reason_template: >
+        Donor appears on the prohibited-source register as {category}, and such
+        donations are prohibited under {statute} {article}.
+    requires_fields: [amount, date]
+    on_missing_field: INDETERMINATE
+
+  - id: RULE-T1-10
+    tier: 1
+    title: Donation constituting proceeds of crime
+    typology: T-06
+    legal_basis:
+      statute: UU No. 7/2017 tentang Pemilihan Umum
+      article: Pasal 339 ayat (1) huruf d
+      period: none
+    effective:
+      from: 2017-08-16
+    test:
+      kind: register_membership
+      register: final_convictions
+    outcome:
+      result: LEGAL_FINDING
+      severity: statutory_violation
+      reason_template: >
+        Donor appears on the register of convictions with final legal force,
+        and donations constituting proceeds of crime are prohibited under
+        {statute} {article}.
+    requires_fields: [amount, date]
+    on_missing_field: INDETERMINATE
+    active: false
+    inactive_reason: >
+      The statute requires a conviction with final legal force. No register of
+      such convictions is available, and reporting on an investigation or a
+      named suspect does not meet that standard at any confidence level.
+
+  # ---------------------------------------------------------------------
+  # Tier 1 — reporting compliance
+  # ---------------------------------------------------------------------
+
+  - id: RULE-T1-11
+    tier: 1
+    title: Donation absent from the filed campaign finance report or received outside the designated account
+    typology: T-07
+    legal_basis:
+      statute: UU No. 7/2017 tentang Pemilihan Umum
+      article: Pasal 221; Pasal 222
+      period: campaign
+    effective:
+      from: 2017-08-16
+    test:
+      kind: report_reconciliation
+    outcome:
+      result: LEGAL_FINDING
+      severity: reporting_violation
+      reason_template: >
+        Donation does not appear in the corresponding campaign finance
+        submission, contrary to {statute} {article}.
+    requires_fields: [amount, date, electoral_context]
+    on_missing_field: INDETERMINATE
+    active: false
+    inactive_reason: >
+      Requires campaign finance submissions and designated-account transaction
+      data, which are held by other institutions and have not been made
+      available for reconciliation.
+
+  # ---------------------------------------------------------------------
+  # Tier 2 — behavioural heuristics
+  #
+  # These carry no legal basis and are never presented as legal findings. Their
+  # output is a training label and a contributing signal, and they are
+  # explicitly fallible. Every parameter below is provisional.
+  # ---------------------------------------------------------------------
+
+  - id: RULE-T2-01
+    tier: 2
+    title: Fan-in burst consistent with donation splitting
+    typology: T-09
+    effective:
+      from: 2011-01-01
+    test:
+      kind: fan_in_burst
+      window_days: 14
+      min_distinct_senders: 15
+      max_amount_ratio: 0.25
+      min_thin_sender_ratio: 0.5
+    outcome:
+      result: BEHAVIOURAL_SIGNAL
+      label_weight: 0.6
+      reason_template: >
+        {distinct_senders} distinct senders donated to {receiver} within
+        {window_days} days, {thin_senders} of them with no prior donation
+        history.
+    calibration:
+      status: PROVISIONAL
+      review_after: first 500 confirmed labels
+
+  - id: RULE-T2-02
+    tier: 2
+    title: Amount positioned just below the applicable limit
+    typology: T-12
+    effective:
+      from: 2011-01-01
+    test:
+      kind: amount_band
+      low_ratio: 0.90
+      high_ratio: 0.999
+    outcome:
+      result: BEHAVIOURAL_SIGNAL
+      label_weight: 0.5
+      reason_template: >
+        Donation of {amount} sits at {ratio_to_limit} of the applicable limit
+        of {threshold}, within the band where deliberate positioning below a
+        threshold is common.
+    calibration:
+      status: PROVISIONAL
+      review_after: first 500 confirmed labels
+
+  - id: RULE-T2-03
+    tier: 2
+    title: Fan-out across many recipients in a short window
+    typology: T-10
+    effective:
+      from: 2011-01-01
+    test:
+      kind: fan_out
+      window_days: 14
+      min_distinct_receivers: 10
+    outcome:
+      result: BEHAVIOURAL_SIGNAL
+      label_weight: 0.5
+      reason_template: >
+        {sender} donated to {distinct_receivers} distinct recipients within
+        {window_days} days.
+    calibration:
+      status: PROVISIONAL
+      review_after: first 500 confirmed labels
+
+  - id: RULE-T2-04
+    tier: 2
+    title: Pass-through of comparable amounts within days
+    typology: T-10
+    effective:
+      from: 2011-01-01
+    test:
+      kind: pass_through
+      window_days: 7
+      low_ratio: 0.85
+      high_ratio: 1.15
+    outcome:
+      result: BEHAVIOURAL_SIGNAL
+      label_weight: 0.6
+      reason_template: >
+        {sender} received {inflow_total} and forwarded {outflow} within
+        {lag_days} days, a ratio of {ratio}.
+    calibration:
+      status: PROVISIONAL
+      review_after: first 500 confirmed labels
+
+  - id: RULE-T2-05
+    tier: 2
+    title: Declared self-funding preceded by an unexplained inflow
+    typology: T-11
+    effective:
+      from: 2011-01-01
+    test:
+      kind: self_funded_inflow
+      window_days: 30
+      min_inflow_ratio: 0.5
+    outcome:
+      result: BEHAVIOURAL_SIGNAL
+      label_weight: 0.5
+      reason_template: >
+        Declared self-funding of {amount} was preceded within 30 days by
+        inflows of {inflow_total}.
+    active: false
+    inactive_reason: >
+      Records do not distinguish a candidate's own contribution from a
+      third-party donation, so there is nothing for this test to key on. Left
+      inactive rather than firing on an assumed default, which would put noise
+      into the training labels.
+    calibration:
+      status: PROVISIONAL
+      review_after: availability of a self-funding declaration
+
+  - id: RULE-T2-06
+    tier: 2
+    title: Donation rate far above the donor's own baseline
+    typology: T-09
+    effective:
+      from: 2011-01-01
+    test:
+      kind: velocity_spike
+      recent_days: 30
+      baseline_days: 90
+      min_multiple: 5.0
+    outcome:
+      result: BEHAVIOURAL_SIGNAL
+      label_weight: 0.4
+      reason_template: >
+        {sender} donated at {observed} times their own 90-day baseline rate.
+    calibration:
+      status: PROVISIONAL
+      review_after: first 500 confirmed labels
+
+  - id: RULE-T2-07
+    tier: 2
+    title: Donations to one recipient clustered tightly around a single amount
+    typology: T-09
+    effective:
+      from: 2011-01-01
+    test:
+      kind: amount_homogeneity
+      window_days: 30
+      min_donations: 10
+      max_coefficient_of_variation: 0.1
+    outcome:
+      result: BEHAVIOURAL_SIGNAL
+      label_weight: 0.5
+      reason_template: >
+        {donations} donations to {receiver} varied by a coefficient of
+        {coefficient_of_variation}, far tighter than independent donors
+        typically produce.
+    calibration:
+      status: PROVISIONAL
+      review_after: first 500 confirmed labels
+
+  - id: RULE-T2-08
+    tier: 2
+    title: A donor's first appearance is a large donation
+    typology: T-09
+    effective:
+      from: 2011-01-01
+    test:
+      kind: thin_donor
+      min_limit_ratio: 0.5
+    outcome:
+      result: BEHAVIOURAL_SIGNAL
+      label_weight: 0.4
+      reason_template: >
+        This is {sender}'s first recorded donation, at {ratio_to_limit} of the
+        applicable limit.
+    calibration:
+      status: PROVISIONAL
+      review_after: first 500 confirmed labels
+
+  - id: RULE-T2-09
+    tier: 2
+    title: One donor supplies most of a recipient's funding
+    typology: T-10
+    effective:
+      from: 2011-01-01
+    test:
+      kind: donor_concentration
+      min_share: 0.6
+    outcome:
+      result: BEHAVIOURAL_SIGNAL
+      label_weight: 0.4
+      reason_template: >
+        {sender} supplied {share} of {receiver}'s recorded funding
+        ({from_this_donor} of {recipient_total}).
+    calibration:
+      status: PROVISIONAL
+      review_after: first 500 confirmed labels
+
+  - id: RULE-T2-10
+    tier: 2
+    title: Donations bunched immediately before a reporting deadline
+    typology: T-09
+    effective:
+      from: 2011-01-01
+    test:
+      kind: deadline_clustering
+      window_hours: 72
+      min_multiple: 3.0
+      baseline_days: 30
+    outcome:
+      result: BEHAVIOURAL_SIGNAL
+      label_weight: 0.4
+      reason_template: >
+        {in_window} donations reached {receiver} in the 72 hours before the
+        {deadline} reporting deadline, {rate_multiple} times the recipient's
+        usual rate.
+    calibration:
+      status: PROVISIONAL
+      review_after: first 500 confirmed labels
