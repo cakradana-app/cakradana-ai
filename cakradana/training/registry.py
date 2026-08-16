@@ -28,6 +28,7 @@ MODEL_FILE = "model.joblib"
 CALIBRATOR_FILE = "calibrator.joblib"
 MANIFEST_FILE = "manifest.json"
 FEATURES_FILE = "features.json"
+MODEL_CARD_FILE = "MODEL_CARD.md"
 
 
 class ArtifactError(RuntimeError):
@@ -97,6 +98,13 @@ def save(
     (directory / MANIFEST_FILE).write_text(
         json.dumps(result.manifest, indent=2, sort_keys=True), encoding="utf-8"
     )
+
+    # The card is generated from the manifest rather than written alongside it,
+    # so it cannot claim a figure the run did not produce. A card composed by
+    # hand records what somebody believed at the time.
+    from cakradana.governance.model_card import write as write_card
+
+    write_card(result.manifest, directory / MODEL_CARD_FILE, model_version=version)
     return directory
 
 
