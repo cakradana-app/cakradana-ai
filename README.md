@@ -24,230 +24,268 @@
 **AI System for Transparency in Indonesian Election Financing**
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.111.0-green.svg)](https://fastapi.tiangolo.com/)
-[![LightGBM](https://img.shields.io/badge/LightGBM-4.3.0-orange.svg)](https://lightgbm.readthedocs.io/)
-[![scikit-learn](https://img.shields.io/badge/scikit--learn-1.5.1-red.svg)](https://scikit-learn.org/)
-[![pandas](https://img.shields.io/badge/pandas-2.2.2-purple.svg)](https://pandas.pydata.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.111-green.svg)](https://fastapi.tiangolo.com/)
+[![LightGBM](https://img.shields.io/badge/LightGBM-4.3-orange.svg)](https://lightgbm.readthedocs.io/)
+[![scikit-learn](https://img.shields.io/badge/scikit--learn-1.5-red.svg)](https://scikit-learn.org/)
 
 </div>
 
 ---
 
-> **Cakradana** is an open-source analytics & AI toolkit to **detect risky political donations** in Indonesia. It combines feature engineering (temporal, network, and behavioral), rule-based checks (legal limits), and a machine learning model (LightGBM) with **threshold tuning** that prioritizes **recall of the *risky* class** under the constraint **recall of *not_risky* ≥ 70%**.
+Detects donations that warrant human investigation, explains why each one was
+surfaced, and improves as investigators report what they found.
 
-* 🎯 **Goal**: help **KPU, PPATK, parties, and candidates** identify patterns like smurfing, proxy accounts, and fake self-funding.
-* 🧠 **Model**: LightGBM + rich feature engineering.
-* ⚖️ **Compliance**: checks contribution limits per Election/Party Law and detects prohibited funding sources.
-* 🚀 **Serving**: FastAPI for real‑time risk scoring.
+The output is a prioritised queue, not a verdict. Nothing here determines that
+an offence occurred.
 
----
+## What it produces
 
-## 🌐 `cakradana-ai` Repository
+Two independent verdicts, never combined into one number.
 
-GitHub repo: [https://github.com/cakradana-app/cakradana-ai](https://github.com/cakradana-app/cakradana-ai)
+**Legal findings** are deterministic tests of statutory compliance, each with
+the article it rests on, the threshold applied, and the value observed. Whether
+a donation exceeds a limit is arithmetic; a probability would be a worse answer
+to a question that has an exact one.
 
-This repository hosts the **AI/ML source code** for Cakradana, including a synthetic data generator, feature engineering, model training, evaluation, and an API service. Actual repo structure:
+**A behavioural score** from 0 to 100 ranks everything the statute has already
+cleared, with the factors that drove it. It is an estimate about conduct and
+says nothing about guilt.
 
-```
-├── app_fastapi.py
-├── app_flask.py
-├── artifacts
-│   ├── lgbm_pipeline.joblib
-│   ├── model_meta.json
-│   └── threshold.json
-├── Dockerfile
-├── featured_synthetic_donations.csv
-├── generate_synthetic_data.py
-├── README.md
-├── requirements.txt
-├── synthetic_donations.csv
-├── train_and_export.py
-└── train.ipynb
-```
+Blending the two would produce a quantity that is neither auditable as a legal
+finding nor interpretable as a probability, and that could not be defended when
+its subject objects to it.
 
-> **Note**: the **primary** service uses `app_fastapi.py`. The `app_flask.py` file is included as an alternative/prototype. The model and threshold are stored in `artifacts/`.
+## The two-tier rule engine
 
----
+**Tier 1 — statutory.** Eleven rules covering donation limits, cumulative
+limits, prohibited sources, and reporting compliance, drawn from UU Parpol
+(UU No. 2/2011 amending UU No. 2/2008) and UU Pemilu (UU No. 7/2017) with
+PKPU No. 18/2023 as implementing regulation.
 
-## 🧩 Architecture & Workflow
+The cumulative rules matter most. The limits are per donor per period, not per
+transaction, so twenty donations of Rp200,000,000 each breach the annual party
+limit twentyfold while every individual payment passes a single-transaction
+check. Nothing in this system detected that before.
 
-1. **Data Ingestion**
-   Donation CSV with minimum columns: `sender, sender_type, receiver, receiver_type, date, amount, risk, risk_type` (the last two are used as labels during training).
+**Tier 2 — behavioural.** Ten heuristics for fan-in convergence, pass-through
+routing, amounts positioned below a limit, velocity spikes, and deadline
+clustering. These carry no legal basis and cite none. Their output is a
+training label and a ranking signal, and they are explicitly fallible.
 
-2. **Feature Engineering**
+Keeping the tiers apart is what lets a classifier contribute anything. Trained
+on statutory outcomes it could only relearn arithmetic it was already given,
+and applied to donations the statute had cleared it would return negatives by
+construction.
 
-   * **Temporal**: totals & frequency per period, last 30‑day transactions, velocity (average inter-donation interval), time components (month/day).
-   * **Network (Graph)**: number of unique receivers per sender (out-degree), number of unique senders per receiver (in-degree), simple degree centrality, fan‑in/fan‑out patterns.
-   * **Donor Behavior**: total/mean/std of donations per sender, receiver diversity, **largest-donation proportion per sender**, flag **exceeding legal limits** based on `sender_type`×`receiver_type`.
+### Rules are data
 
-3. **Model Training**
+Rules live in `cakradana/rules/rulesets/` as versioned YAML with effective
+dates. Amending a threshold needs no code change and no retrain, and a donation
+is always evaluated against the rules in force on its own date.
 
-   * **Estimator**: LightGBM (GBDT) with **class weighting** (`scale_pos_weight`) to handle imbalance.
-   * **Validation**: stratified split; primary metrics ROC‑AUC, PR‑AUC, F1; feature importance analysis.
+A rule that cannot evaluate its inputs returns `INDETERMINATE`, never `PASS`.
+An unevaluated prohibition reported as clean is indistinguishable from a real
+clean result, which makes it worse than no answer at all.
 
-4. **Threshold Tuning (Option‑A)**
-   From the ROC curve on the validation set: **choose a threshold** that **maximizes recall of the *risky* class** **subject to** *recall(*not_risky*) ≥ 0.70* (≡ **FPR ≤ 0.30**). This threshold is saved to `artifacts/threshold.json` and used in the service.
+**No statutory citation in this repository has been verified by a legal
+reviewer.** The thresholds and articles are consistent across the project's
+source documents, and consistency is not verification. Until each is checked
+against the consolidated text, the engine reports Tier-1 rules as indeterminate
+rather than asserting an unverified legal fact about a named person. Set
+`require_verified_citations=False` only against synthetic data.
 
-5. **Serving (FastAPI + Docker)**
-   `app_fastapi.py` loads the **trained pipeline** + **threshold** and provides a `/predict` endpoint for risk scores and labels. The **Dockerfile** is configured to **automatically run `app_fastapi.py`** (via Uvicorn) when the container starts.
+## Detection lanes
 
----
+| Lane | Share of the score | Basis |
+|---|---|---|
+| Classifier | 50% | LightGBM over the full feature set |
+| Graph | 30% | Structural findings — convergence, pass-through, concentration |
+| Anomaly | 15% | Isolation Forest over donations the rules cleared |
+| Reputation | 5% | Not operating |
 
-## 🛠️ Tech Stack
+Each lane is capped separately. They are not calibrated against one another,
+and the exploratory ones can always surface more unusual donations than a team
+can review, so an unbounded pool lets the weakest evidence displace the
+strongest.
 
-* **Language**: Python 3.10+ / 3.11+
-* **Data**: pandas, NumPy
-* **ML**: LightGBM, scikit‑learn (pipeline, metrics; class weighting & thresholding)
-* **Serving**: FastAPI (primary), Uvicorn, Pydantic; Flask (optional)
-* **Packaging/Runtime**: **Docker** (production container; auto-runs `app_fastapi.py`)
-* **Artifacts**: joblib (`artifacts/lgbm_pipeline.joblib`, `threshold.json`, `model_meta.json`)
+A lane that cannot run says so, and the score is marked incomplete rather than
+having the remaining lanes stretched to cover the gap.
 
----
+**The reputation lane does not operate.** It would accuse named parties on the
+strength of press coverage, and it stays off until its accuracy and defamation
+controls are in place.
 
-## 📈 Model Statistics (Validation)
+## How it is measured
 
-> Configuration: LightGBM with **class weights** and **Option‑A** thresholding. Target `risk` (binary: 1=risky, 0=not_risky), stratified split.
+Accuracy is not reported. On a realistic population where a few percent of
+donations are risky, flagging nothing scores above 95%.
 
-**Key Summary**
+The binding constraint is analyst hours, so metrics are defined against the
+number of donations a team can actually review in a period:
 
-* **ROC‑AUC**: **0.8424**
-* **Accuracy**: **0.7377**
-* **F1 (binary)**: **0.7472**
+- **Precision@B** — of the B donations reviewed, how many were genuinely risky.
+- **Recall@B** — of all genuinely risky donations, how many reached the queue.
+- **Lift@B** — confirmed-risky donations the model surfaced that **no rule
+  flagged**, over what the rules alone would surface at the same budget.
 
-**Classification Report**
+**Lift@B decides whether the classifier ships.** At or below parity the rules
+run alone: they are cheaper, already explainable, and already built. A model
+trained on heuristic labels can reproduce those heuristics and look capable
+while adding nothing, and this is the only measurement that shows it.
 
-| Class         | Precision | Recall |   F1‑score |  Support |
-| ------------- | --------- | ------ | ---------: | -------: |
-| not_risky(0)  | 0.7569    | 0.7000 |     0.7273 |     1650 |
-| risky(1)      | 0.7211    | 0.7753 | **0.7472** |     1651 |
-| **Accuracy**  |           |        | **0.7377** | **3301** |
-| **Macro avg** | 0.7390    | 0.7376 |     0.7373 |     3301 |
-| **Weighted**  | 0.7390    | 0.7377 |     0.7373 |     3301 |
+Splits are grouped by donor and the absence of overlap is asserted, not
+reported. Evaluation uses human-confirmed labels; agreement with the heuristics
+is not a success metric.
 
-**Confusion Matrix**
-
-```
-[[TN, FP],
- [FN, TP]] = [[1155, 495],
-              [ 371,1280]]
-```
-
-**Brief interpretation**
-
-* The model shows **good** discrimination (ROC‑AUC ≈ 0.84).
-* With **Option‑A**, recall of the *risky* class is **boosted** (≈ 0.78) while maintaining *not_risky* recall **≥ 0.70**.
-* *Trade‑off*: higher *risky* recall increases FP on *not_risky*—aligned with a risk‑averse compliance strategy.
-
-> **Operational Suggestion**: if the goal is triage, use **score ranking** + *top‑K review* (e.g., top 10–20%) to balance investigation workload and case capture.
-
----
-
-## 🚀 Quickstart
-
-### 1) Setup
+## Quickstart
 
 ```bash
-git clone https://github.com/cakradana-app/cakradana-ai.git
-cd cakradana-ai
-python -m venv .venv && source .venv/bin/activate  # (Windows: .venv\\Scripts\\activate)
-pip install -r requirements.txt
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
+pip install -e .
+pytest
 ```
 
-### 2) Generate synthetic data (if needed)
+Generate a dataset and verify it contains the patterns it labels:
 
 ```bash
-python generate_synthetic_data.py
+cakradana generate
 ```
 
-### 3) Train the model & export artifacts
+Train, measure, and get a shipping decision:
 
 ```bash
-python train_and_export.py
+cakradana train --budget 100 --version lgbm-2026.08.1
 ```
 
-### 4) Run the API (FastAPI)
+Score a dataset with the rules alone:
 
 ```bash
-uvicorn app_fastapi:app --host 0.0.0.0 --port 8000
-# open http://localhost:8000/docs
+cakradana score
 ```
 
-### 4b) Run via Docker (recommended for production)
+Run the service:
 
 ```bash
-# build image
-docker build -t cakradana-ai .
-
-# run container (Dockerfile auto-runs app_fastapi.py via Uvicorn)
-docker run -p 8000:8000 --name cakradana cakradana-ai
-# open http://localhost:8000/docs
+export CAKRADANA_SERVICE_TOKEN=...
+uvicorn cakradana.serving.api:app --host 0.0.0.0 --port 8000
+# http://localhost:8000/docs
 ```
 
-### 5) Prediction example
+## The scoring contract
+
+Callers send a canonical donation record. They do **not** send engineered
+features, and a request carrying one is rejected rather than obeyed.
 
 ```bash
-curl -X POST "http://localhost:8000/predict" \
+curl -X POST http://localhost:8000/v1/score \
+  -H "Authorization: Bearer $CAKRADANA_SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "instances": [
-      {
-        "sender_type": "individual",
-        "receiver_type": "political-party",
-        "amount": 2000000,
-        "total_donasi_sender": 5000000,
-        "jumlah_transaksi_sender": 3,
-        "rata_rata_donasi_sender": 1666666.7,
-        "std_donasi_sender": 1000000,
-        "jumlah_donasi_30hari_sender": 2,
-        "selang_waktu_rata2_sender": 7.5,
-        "receiver_unik_per_sender": 2,
-        "sender_unik_per_receiver": 15,
-        "degree_centrality_sender": 2,
-        "degree_centrality_receiver": 15,
-        "proporsi_donasi_terbesar_per_sender": 0.6,
-        "flag_donasi_melebihi_batas": 0
-      }
-    ]
+    "request_id": "req-1",
+    "donation": {
+      "donation_id": "don-1",
+      "sender_ref":   {"entity_id": "donor-1", "entity_type": "individual"},
+      "receiver_ref": {"entity_id": "party-1", "entity_type": "political-party"},
+      "amount_idr": 95000000,
+      "occurred_at": "2026-08-12T00:00:00+07:00",
+      "recorded_at": "2026-08-13T04:21:00+07:00",
+      "channel": "paper-form",
+      "electoral_context": "pemilu-2029"
+    }
   }'
 ```
 
----
+This is the decision that makes the two services connectable. Features are
+derived here from maintained point-in-time state, which is also what keeps
+training and serving on one implementation rather than a convention.
 
-## 🧪 Data & Schema
+| Endpoint | Purpose |
+|---|---|
+| `POST /v1/score` | Score one donation |
+| `POST /v1/score/batch` | Bounded batch, reported per item |
+| `POST /v1/rescore` | Score again with a reason; the previous result is kept |
+| `GET /v1/explain/{donation_id}` | Every scoring event for a donation |
+| `GET /v1/rules` | Active rule set, effective dates, verification status |
+| `GET /v1/model-info` | Model, rule-set, and feature versions |
+| `GET /health`, `GET /ready` | Liveness, distinct from readiness |
 
-Minimum columns for inference:
+Readiness is separate from liveness because a running process with no rules
+loaded would report every donation as carrying no findings, which reads exactly
+like a clean bill of health.
 
-* **Raw features**: `sender_type`, `receiver_type`, `amount`, `date` (optional for real‑time temporal features).
-* **Derived features (examples)**:
-  `total_donasi_sender`, `jumlah_transaksi_sender`, `rata_rata_donasi_sender`, `std_donasi_sender`, `jumlah_donasi_30hari_sender`, `selang_waktu_rata2_sender`, `receiver_unik_per_sender`, `sender_unik_per_receiver`, `degree_centrality_sender`, `degree_centrality_receiver`, `proporsi_donasi_terbesar_per_sender`, `flag_donasi_melebihi_batas`.
+## Point-in-time correctness
 
-**Sample datasets in repo**:
+Every aggregate is computed through a view bound to one timestamp. A donation
+contributes only when it both occurred and was recorded at or before that
+moment.
 
-* `synthetic_donations.csv` → basic synthetic transaction data (mockup).
-* `featured_synthetic_donations.csv` → feature‑engineered training‑ready output.
+The second condition is the one that is easy to lose. A donation that occurred
+in January but was scraped in June was not knowable in February, and admitting
+it to a February aggregate leaks the future into a past decision. Computing
+aggregates over a finished dataset before splitting it is the same error at
+training time.
 
-> **Production**: ensure feature engineering is consistent between training & inference (use the same pipeline or a dedicated feature service).
+Values that cannot be computed are `null`, never `0.0`. A donor's first
+donation has no standard deviation and no mean interval between donations;
+filling those with zero asserts a perfectly regular donor, which is both false
+and a strong signal in the wrong direction.
 
----
+## Synthetic data
 
-## ⚙️ Important Configuration
+Bootstrap only, and never reported as system performance.
 
-* **Class weight**: `scale_pos_weight` to handle imbalance.
-* **Thresholding (Option‑A)**: save the selected threshold to `artifacts/threshold.json` and **do not hard‑code** it in the service.
-* **Calibration** (optional): `CalibratedClassifierCV` (isotonic) if probability scores need better reliability.
-* **Validation**: consider *time‑based split* (train on earlier period → test on later) and *group split by sender* to reduce leakage.
+Every typology is generated with the structure that defines it and checked at
+generation time by a detector using only that signal. A dataset whose labels
+are not supported by its own structure fails to build.
 
----
+Ordinary giving is generated alongside it, including genuine fundraising
+surges. These converge many donors on one recipient exactly as a split
+contribution does, and differ in that real supporters choose varied amounts.
+Without them any fan-in detector reaches perfect precision here and collapses
+on contact with real data.
 
-## 🧭 Short Roadmap
+The risky share is a realistic few percent rather than half. A balanced set
+makes class weighting inert and yields precision estimates that do not transfer
+to a population where the pattern is rare.
 
-* 🔍 **Advanced graph features** (betweenness, community) and/or GNN for collusive patterns (not used yet).
-* 📊 **Monitoring & drift** (data drift, performance drift) + alerting.
-* 🧾 **Explainability** (e.g., more advanced feature importance) for audit (no SHAP in repo currently).
-* 🧱 **Hard rules** (KYC/AML) configurable by regulators.
+## Layout
 
----
+```
+cakradana/
+├── schema/       canonical donation, entity, and label records
+├── rules/        two-tier engine; rule sets as versioned YAML
+├── features/     one implementation per feature, shared by train and serve
+├── lanes/        classifier, graph, anomaly
+├── scoring/      composition, bands, reason codes
+├── evaluation/   budget metrics, lift, calibration, splits
+├── training/     pipeline, artifact registry
+├── serving/      scoring service and HTTP contract
+├── data/         synthetic generator and its acceptance checks
+├── history.py    point-in-time views
+├── calendar.py   campaign periods and limit-regime selection
+└── registers.py  prohibited-source and conviction registers
+```
 
-## 🔐 Ethics & Compliance
+## What is not built
 
-Cakradana is intended as an **analytical decision‑support tool**. Model results are **not** evidence of violations; always conduct **human review** and refer to applicable regulations. Maintain privacy, data security, and audit trails according to standards.
+Stated because absence is easy to mistake for coverage.
+
+| Capability | Blocked on |
+|---|---|
+| Foreign-source detection | Donor jurisdiction is not captured; nationality must never be inferred from a name |
+| Prohibited-source findings | An authoritative register of government bodies, state and regional enterprises, and village governments |
+| Proceeds-of-crime findings | A register of convictions with final legal force; press reporting does not meet that standard |
+| Report reconciliation | Campaign finance submissions and designated-account transactions |
+| Self-funding detection | Records do not distinguish a candidate's own funds from a third party's |
+| External reputation | Accuracy and defamation controls |
+
+Each is implemented and wired, reports indeterminate, and states why. The
+mechanism is ready the moment the data is.
+
+## Ethics
+
+An analytical decision-support tool. Results are not evidence of a violation.
+False positives here damage named individuals in a political context, so the
+system is deliberately modest about what it knows: it ranks donations for
+human attention and leaves determination to people.
