@@ -208,6 +208,11 @@ class RuleSet(BaseModel):
     version: str
     rules: tuple[Rule, ...]
     notes: str | None = None
+    #: True for a set that exercises rules against fixture reference data.
+    #: Such a set is never selected implicitly: it produces findings that look
+    #: like enforcement and are not, so choosing it has to be a deliberate act
+    #: by whoever is running the system.
+    demonstration: bool = False
 
     @model_validator(mode="after")
     def _ids_are_unique(self) -> RuleSet:

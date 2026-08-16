@@ -34,6 +34,7 @@ from typing import Iterator, Sequence
 
 from cakradana.calendar import CampaignPeriod, ElectoralCalendar
 from cakradana.registers import Register, RegisterEntry, RegisterSet
+from cakradana.reporting import ReportedDonation, SubmissionSet
 from cakradana.schema import (
     Channel,
     Donation,
@@ -55,12 +56,30 @@ COMPANY_PARTY_LIMIT = 800_000_000
 
 #: Typologies this generator encodes structurally.
 T_CUMULATIVE = "T-02"
+T_FOREIGN = "T-03"
 T_ILLEGAL_SOURCE = "T-05"
+T_UNREPORTED = "T-07"
 T_SMURFING = "T-09"
 T_PROXY = "T-10"
+T_SELF_FUNDED = "T-11"
 T_STRUCTURING = "T-12"
 
-ALL_TYPOLOGIES = (T_CUMULATIVE, T_ILLEGAL_SOURCE, T_SMURFING, T_PROXY, T_STRUCTURING)
+ALL_TYPOLOGIES = (
+    T_CUMULATIVE,
+    T_FOREIGN,
+    T_ILLEGAL_SOURCE,
+    T_UNREPORTED,
+    T_SMURFING,
+    T_PROXY,
+    T_SELF_FUNDED,
+    T_STRUCTURING,
+)
+
+#: Jurisdictions used for the foreign-source pattern. Carried on the entity,
+#: never inferred from a name: name-based nationality inference is unreliable
+#: and discriminatory, and here it would attach a statutory offence to someone
+#: on the basis of what they are called.
+_FOREIGN_JURISDICTIONS = ("SG", "MY", "HK", "AU", "CN")
 
 _GIVEN = (
     "Budi", "Siti", "Agus", "Dewi", "Eko", "Rina", "Joko", "Sri", "Andi", "Ayu",
@@ -113,12 +132,20 @@ class GeneratorConfig:
     #: and fails immediately on real data.
     n_grassroots_campaigns: int = 6
     typology_mix: tuple[tuple[str, float], ...] = (
-        (T_SMURFING, 0.30),
-        (T_CUMULATIVE, 0.25),
-        (T_STRUCTURING, 0.20),
-        (T_PROXY, 0.15),
-        (T_ILLEGAL_SOURCE, 0.10),
+        (T_SMURFING, 0.24),
+        (T_CUMULATIVE, 0.20),
+        (T_STRUCTURING, 0.16),
+        (T_PROXY, 0.12),
+        (T_ILLEGAL_SOURCE, 0.08),
+        (T_FOREIGN, 0.08),
+        (T_SELF_FUNDED, 0.06),
+        (T_UNREPORTED, 0.06),
     )
+    #: Share of lawful donations that a recipient omits from its filed return.
+    #: Reporting failures are not confined to donations that are otherwise
+    #: irregular, and generating them only alongside other patterns would make
+    #: the reconciliation rule look like a proxy for the others.
+    unreported_share: float = 0.04
 
 
 @dataclass
@@ -131,6 +158,10 @@ class SyntheticDataset:
     truth: dict[str, str]
     registers: RegisterSet
     calendar: ElectoralCalendar
+    #: Filed campaign finance returns covering the generated period. Every
+    #: donation appears in them except those marked as unreported, so the
+    #: reconciliation rule has something to find and something to leave alone.
+    submissions: SubmissionSet
     manifest: dict[str, object]
 
     def __len__(self) -> int:
@@ -189,6 +220,7 @@ class _Builder:
         typology: str | None = None,
         channel: Channel | None = None,
         recorded: datetime | None = None,
+        self_funded: bool | None = False,
     ) -> Donation:
         channel = channel or self.rng.choices(
             [Channel.DIGITAL_FORM, Channel.PAPER_FORM, Channel.WEB_SCRAPE],
@@ -255,6 +287,7 @@ class _Builder:
             )[0],
             channel=channel,
             electoral_context=self.config.electoral_context,
+            is_self_funded_declared=self_funded,
             provenance=provenance,
         )
         self.donations.append(donation)
@@ -332,6 +365,7 @@ def generate(config: GeneratorConfig | None = None) -> SyntheticDataset:
             f"party-{i:03d}",
             f"Partai Contoh {chr(ord('A') + i)}",
             EntityType.POLITICAL_PARTY,
+            jurisdiction="ID",
         )
         for i in range(config.n_recipients)
     ]
@@ -340,6 +374,10 @@ def generate(config: GeneratorConfig | None = None) -> SyntheticDataset:
             f"donor-{i:05d}",
             builder._person_name() if i % 5 else builder._company_name(),
             EntityType.INDIVIDUAL if i % 5 else EntityType.CORPORATION,
+            # Recorded, not inferred. A donor whose jurisdiction is simply
+            # unknown leaves the foreign-source rule unable to answer, which is
+            # the honest outcome but tells nobody anything.
+            jurisdiction="ID",
         )
         for i in range(config.n_legitimate_donors)
     ]
@@ -385,8 +423,9 @@ def generate(config: GeneratorConfig | None = None) -> SyntheticDataset:
         donations=builder.donations,
         entities=builder.entities,
         truth=builder.truth,
-        registers=RegisterSet([prohibited]),
+        registers=RegisterSet([prohibited, _convictions_register(builder)]),
         calendar=calendar,
+        submissions=_submissions(builder, config),
         manifest=manifest,
     )
 
@@ -421,6 +460,7 @@ def _background(
             rng.choice(recipients),
             builder.heavy_tailed_amount(),
             builder.random_datetime(),
+            self_funded=False,
         )
 
 
@@ -443,6 +483,7 @@ def _grassroots(builder: _Builder, recipients: Sequence[Entity]) -> None:
                 builder.next_id("supporter"),
                 builder._person_name(),
                 EntityType.INDIVIDUAL,
+                jurisdiction="ID",
             )
             supporters.append(donor)
 
@@ -503,6 +544,7 @@ def _smurfing(builder: _Builder, recipients: Sequence[Entity], target: int) -> N
                 builder.next_id("smurf"),
                 builder._person_name(),
                 EntityType.INDIVIDUAL,
+                jurisdiction="ID",
             )
             amount = int(base * rng.uniform(0.96, 1.04) // 100_000 * 100_000)
             builder.add(
@@ -521,10 +563,12 @@ def _proxy(builder: _Builder, recipients: Sequence[Entity], target: int) -> None
     emitted = 0
     while emitted < target:
         origin = builder.entity(
-            builder.next_id("origin"), builder._company_name(), EntityType.CORPORATION
+            builder.next_id("origin"), builder._company_name(), EntityType.CORPORATION,
+            jurisdiction="ID",
         )
         intermediary = builder.entity(
-            builder.next_id("proxy"), builder._person_name(), EntityType.INDIVIDUAL
+            builder.next_id("proxy"), builder._person_name(), EntityType.INDIVIDUAL,
+            jurisdiction="ID",
         )
         recipient = rng.choice(recipients)
         amount = rng.randint(50_000_000, 190_000_000)
@@ -548,7 +592,8 @@ def _structuring(builder: _Builder, recipients: Sequence[Entity], target: int) -
     emitted = 0
     while emitted < target:
         donor = builder.entity(
-            builder.next_id("structurer"), builder._person_name(), EntityType.INDIVIDUAL
+            builder.next_id("structurer"), builder._person_name(), EntityType.INDIVIDUAL,
+            jurisdiction="ID",
         )
         recipient = rng.choice(recipients)
         start = builder.random_datetime_outside_campaign()
@@ -570,7 +615,8 @@ def _cumulative(builder: _Builder, recipients: Sequence[Entity], target: int) ->
     emitted = 0
     while emitted < target:
         donor = builder.entity(
-            builder.next_id("cumulative"), builder._person_name(), EntityType.INDIVIDUAL
+            builder.next_id("cumulative"), builder._person_name(), EntityType.INDIVIDUAL,
+            jurisdiction="ID",
         )
         recipient = rng.choice(recipients)
         n = rng.randint(4, 9)
@@ -620,13 +666,172 @@ def _illegal_source(
         )
 
 
+def _foreign(builder: _Builder, recipients: Sequence[Entity], target: int) -> None:
+    """Donations from parties whose jurisdiction is recorded as foreign.
+
+    The signal lives on the entity, as a recorded jurisdiction. Nothing about
+    the donor's name indicates it, deliberately: a detector that keyed on names
+    would be inferring nationality from what someone is called.
+    """
+    rng = builder.rng
+    for _ in range(target):
+        donor = builder.entity(
+            builder.next_id("foreign"),
+            builder._company_name(),
+            EntityType.FOREIGN_ENTITY,
+            jurisdiction=rng.choice(_FOREIGN_JURISDICTIONS),
+        )
+        builder.add(
+            donor,
+            rng.choice(recipients),
+            builder.heavy_tailed_amount(),
+            builder.random_datetime(),
+            typology=T_FOREIGN,
+        )
+
+
+def _self_funded(builder: _Builder, recipients: Sequence[Entity], target: int) -> None:
+    """Declared self-funding preceded by an unexplained inflow.
+
+    The pattern is a candidate declaring money as their own shortly after
+    receiving a comparable sum from somewhere else. Without the declaration
+    there is nothing to test, which is why this typology needs the field rather
+    than merely the amounts.
+    """
+    rng = builder.rng
+    emitted = 0
+    while emitted < target:
+        candidate = builder.entity(
+            builder.next_id("candidate"), builder._person_name(), EntityType.INDIVIDUAL,
+            jurisdiction="ID",
+        )
+        backer = builder.entity(
+            builder.next_id("backer"), builder._company_name(), EntityType.CORPORATION,
+            jurisdiction="ID",
+        )
+        recipient = rng.choice(recipients)
+        declared = rng.randint(60_000_000, 180_000_000)
+        inflow_at = builder.random_datetime_outside_campaign()
+
+        # The inflow is an ordinary-looking donation to the candidate, recorded
+        # promptly. A scraped record arriving months later would not have been
+        # knowable when the declaration was scored, and the pattern would be
+        # undetectable for reasons that have nothing to do with the pattern.
+        builder.add(
+            backer,
+            candidate,
+            int(declared * rng.uniform(0.6, 1.1)),
+            inflow_at,
+            channel=Channel.DIGITAL_FORM,
+        )
+        builder.add(
+            candidate,
+            recipient,
+            declared,
+            inflow_at + timedelta(days=rng.randint(3, 25)),
+            typology=T_SELF_FUNDED,
+            self_funded=True,
+        )
+        emitted += 1
+
+
+def _unreported(builder: _Builder, recipients: Sequence[Entity], target: int) -> None:
+    """Ordinary donations that the recipient will omit from its filed return.
+
+    Generated as unremarkable in every other respect. A reporting failure that
+    only ever accompanied another irregularity would make the reconciliation
+    rule a proxy for those, and it would never be tested on its own.
+    """
+    rng = builder.rng
+    donors = [
+        builder.entity(
+            builder.next_id("undeclared"), builder._person_name(), EntityType.INDIVIDUAL,
+            jurisdiction="ID",
+        )
+        for _ in range(max(target, 1))
+    ]
+    for donor in donors[:target]:
+        builder.add(
+            donor,
+            rng.choice(recipients),
+            builder.heavy_tailed_amount(),
+            builder.random_datetime(),
+            typology=T_UNREPORTED,
+        )
+
+
 _EMITTERS = {
+    T_FOREIGN: _foreign,
+    T_SELF_FUNDED: _self_funded,
+    T_UNREPORTED: _unreported,
     T_SMURFING: _smurfing,
     T_PROXY: _proxy,
     T_STRUCTURING: _structuring,
     T_CUMULATIVE: _cumulative,
     T_ILLEGAL_SOURCE: _illegal_source,
 }
+
+
+def _submissions(builder: _Builder, config: GeneratorConfig) -> SubmissionSet:
+    """Build the filings a recipient would have made.
+
+    Everything is declared except the donations generated as unreported, plus a
+    random handful of ordinary ones. Reporting failures are not confined to
+    donations that are otherwise irregular, and a filing that omitted only the
+    suspicious ones would let the reconciliation rule stand in for the others.
+    """
+    rng = builder.rng
+    lines: list[ReportedDonation] = []
+
+    for donation in builder.donations:
+        if builder.truth.get(donation.donation_id) == T_UNREPORTED:
+            continue
+        if rng.random() < config.unreported_share:
+            # An ordinary omission. Detected as a reporting failure, which it
+            # is, and not counted against the typology's own recall.
+            continue
+        lines.append(
+            ReportedDonation(
+                electoral_context=config.electoral_context,
+                report_kind="LPSDK",
+                donor_name=donation.sender_ref.raw_text,
+                donor_ref=donation.sender_ref.entity_id,
+                recipient_ref=donation.receiver_ref.entity_id,
+                # Filed figures are transcribed by hand, so they carry the
+                # rounding and slippage a real return would.
+                amount_idr=int(donation.amount_idr * rng.uniform(0.995, 1.005)),
+                occurred_on=donation.occurred_at.date()
+                + timedelta(days=rng.randint(-1, 1)),
+            )
+        )
+
+    return SubmissionSet(
+        lines,
+        covered_periods=(
+            (config.electoral_context, config.period_start, config.period_end),
+        ),
+        available=True,
+        # Fixture data standing in for filings held by the electoral authority.
+        # A finding drawn from it demonstrates the rule; it establishes nothing.
+        authoritative=False,
+    )
+
+
+def _convictions_register(builder: _Builder) -> Register:
+    """A stand-in register of convictions with final legal force.
+
+    Empty of real entries. The statute requires a conviction that is final, and
+    no source available here can establish that for anyone, so the register is
+    supplied but marked non-authoritative and carries only entities this
+    generator itself created.
+    """
+    return Register(
+        RegisterSet.FINAL_CONVICTIONS,
+        (),
+        available=True,
+        authoritative=False,
+        refreshed_at=datetime.now(tz=WIB),
+    )
 
 
 def _prohibited_register(builder: _Builder) -> Register:
@@ -646,5 +851,8 @@ def _prohibited_register(builder: _Builder) -> Register:
         RegisterSet.PROHIBITED_SOURCE,
         entries,
         available=True,
+        # Generated data standing in for a register held by the electoral and
+        # financial authorities. Findings drawn from it are demonstrations.
+        authoritative=False,
         refreshed_at=datetime.now(tz=WIB),
     )

@@ -37,10 +37,20 @@ def available_versions() -> tuple[str, ...]:
 
 @lru_cache(maxsize=1)
 def load_latest() -> RuleSet:
-    versions = available_versions()
-    if not versions:
-        raise FileNotFoundError(f"no rule sets published in {RULESET_DIR}")
-    return load_named(versions[-1])
+    """The newest published set.
+
+    Demonstration sets are excluded. They fire rules against fixture reference
+    data and produce findings that resemble enforcement without being it, so
+    one is only ever loaded by name — never picked up because it happened to
+    sort last.
+    """
+    for version in reversed(available_versions()):
+        ruleset = load_named(version)
+        if not ruleset.demonstration:
+            return ruleset
+    raise FileNotFoundError(
+        f"no published (non-demonstration) rule set in {RULESET_DIR}"
+    )
 
 
 def _reject_unknown_tests(ruleset: RuleSet) -> None:

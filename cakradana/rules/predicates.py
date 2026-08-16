@@ -63,6 +63,10 @@ class PredicateResult:
     #: Conditions a behavioural test could not evaluate. Carried so a signal
     #: is never read as stronger than the evidence behind it.
     skipped: tuple[str, ...] = ()
+    #: False when the finding rests on a source that is not the authority for
+    #: the question. Such a finding is a demonstration of the mechanism, and
+    #: the distinction has to survive all the way to whoever reads it.
+    authoritative: bool = True
 
     @classmethod
     def undetermined(cls, reason: str) -> PredicateResult:
@@ -265,10 +269,12 @@ def _register_membership(rule: Rule, ctx: RuleContext) -> PredicateResult:
         )
     return PredicateResult(
         fired=result.member,
+        authoritative=result.authoritative,
         facts={
             "register": register_name,
             "category": result.entry.category if result.entry else None,
             "matched_name": result.entry.canonical_name if result.entry else None,
+            "source": result.entry.source if result.entry else None,
         },
     )
 
@@ -302,13 +308,43 @@ def _foreign_jurisdiction(rule: Rule, ctx: RuleContext) -> PredicateResult:
 def _report_reconciliation(rule: Rule, ctx: RuleContext) -> PredicateResult:
     """The donation is missing from the recipient's filed report.
 
-    Detects an offence currently invisible to every party, and stays
-    indeterminate until campaign finance submissions and designated-account
-    transactions are actually available to compare against.
+    Detects an offence currently invisible to every party: money that reached a
+    campaign and never appeared in what it declared.
+
+    The comparison only means anything where the filing is complete for the
+    period in question. Outside a covered period the result is indeterminate,
+    because reporting a donation as undeclared when the relevant return has not
+    been filed yet would be an accusation manufactured from a date range.
     """
-    return PredicateResult.undetermined(
-        "campaign finance report and designated-account data are not available "
-        "for reconciliation"
+    submissions = ctx.submissions
+    if not submissions.available:
+        return PredicateResult.undetermined(submissions.unavailable_reason)
+
+    donation = ctx.donation
+    occurred_on = donation.occurred_at.date()
+
+    if not submissions.covers(donation.electoral_context, occurred_on):
+        return PredicateResult.undetermined(
+            "no filed return covers this donation's date, so its absence from "
+            "the filings is not evidence that it went undeclared"
+        )
+
+    declared = submissions.contains(
+        electoral_context=donation.electoral_context,
+        donor_ref=donation.sender_ref.entity_id,
+        recipient_ref=donation.receiver_ref.entity_id,
+        amount_idr=donation.amount_idr,
+        occurred_on=occurred_on,
+    )
+
+    return PredicateResult(
+        fired=not declared,
+        authoritative=submissions.authoritative,
+        facts={
+            "declared": declared,
+            "filings_examined": len(submissions),
+            "electoral_context": donation.electoral_context,
+        },
     )
 
 

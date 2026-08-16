@@ -58,6 +58,12 @@ class RegisterLookup(BaseModel):
     member: bool = False
     entry: RegisterEntry | None = None
     reason: str | None = None
+    #: Whether the supplying source is the authority for this question.
+    #: A fixture register lets the dependent rules run end to end, but a
+    #: finding drawn from one is a demonstration and must never be presented
+    #: as enforcement. Carried on the lookup so the distinction survives into
+    #: the finding rather than being lost at the boundary.
+    authoritative: bool = True
 
 
 class Register:
@@ -75,11 +81,13 @@ class Register:
         entries: Iterable[RegisterEntry] = (),
         *,
         available: bool = False,
+        authoritative: bool = True,
         refreshed_at: datetime | None = None,
         max_age: timedelta | None = None,
         unavailable_reason: str = "register not supplied",
     ) -> None:
         self.name = name
+        self.authoritative = authoritative
         self._entries = {e.entity_id: e for e in entries}
         self._by_name: dict[str, RegisterEntry] = {}
         for entry in self._entries.values():
@@ -129,16 +137,26 @@ class Register:
             entry = self._by_name.get(_normalise(name))
 
         if entry is None:
-            return RegisterLookup(register_name=self.name, available=True, member=False)
+            return RegisterLookup(
+                register_name=self.name,
+                available=True,
+                member=False,
+                authoritative=self.authoritative,
+            )
         if not entry.covers(when):
             return RegisterLookup(
                 register_name=self.name,
                 available=True,
                 member=False,
+                authoritative=self.authoritative,
                 reason="entry exists but did not apply on this date",
             )
         return RegisterLookup(
-            register_name=self.name, available=True, member=True, entry=entry
+            register_name=self.name,
+            available=True,
+            member=True,
+            entry=entry,
+            authoritative=self.authoritative,
         )
 
 
@@ -165,7 +183,14 @@ class RegisterSet:
         self._registers = {r.name: r for r in registers}
 
     def get(self, name: str) -> Register:
-        return self._registers.get(name) or Register(
+        # Checked against None rather than for truthiness. A register defines
+        # __len__, so a supplied but empty one is falsy, and `or` would report
+        # it as never configured — turning "this list is empty" into "there is
+        # no list", which are the two states this class exists to separate.
+        supplied = self._registers.get(name)
+        if supplied is not None:
+            return supplied
+        return Register(
             name, unavailable_reason=f"register {name!r} is not configured"
         )
 

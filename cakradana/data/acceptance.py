@@ -26,10 +26,13 @@ from cakradana.data.generator import (
     ALL_TYPOLOGIES,
     INDIVIDUAL_PARTY_LIMIT,
     T_CUMULATIVE,
+    T_FOREIGN,
     T_ILLEGAL_SOURCE,
     T_PROXY,
+    T_SELF_FUNDED,
     T_SMURFING,
     T_STRUCTURING,
+    T_UNREPORTED,
     SyntheticDataset,
 )
 
@@ -69,6 +72,9 @@ def check(dataset: SyntheticDataset) -> list[TypologyCheck]:
         T_STRUCTURING: _detect_structuring,
         T_CUMULATIVE: _detect_cumulative,
         T_ILLEGAL_SOURCE: _detect_illegal_source,
+        T_FOREIGN: _detect_foreign,
+        T_SELF_FUNDED: _detect_self_funded,
+        T_UNREPORTED: _detect_unreported,
     }
     results = []
     for typology in ALL_TYPOLOGIES:
@@ -219,3 +225,65 @@ def _detect_illegal_source(dataset: SyntheticDataset) -> set[str]:
         for d in dataset.donations
         if d.sender_ref.entity_id in prohibited
     }
+
+
+def _detect_foreign(dataset: SyntheticDataset) -> set[str]:
+    """Donor's recorded jurisdiction is outside Indonesia.
+
+    A lookup against the entity, never an inference from the donor's name.
+    """
+    foreign = {
+        entity.entity_id
+        for entity in dataset.entities.values()
+        if entity.jurisdiction and entity.jurisdiction != "ID"
+    }
+    return {
+        d.donation_id
+        for d in dataset.donations
+        if d.sender_ref.entity_id in foreign
+    }
+
+
+def _detect_self_funded(dataset: SyntheticDataset) -> set[str]:
+    """Declared self-funding preceded by a comparable inflow.
+
+    Both halves are required. A declaration on its own is ordinary — candidates
+    fund their own campaigns lawfully all the time — and it is the unexplained
+    money arriving just beforehand that makes the declaration questionable.
+    """
+    inflows: dict[str, list] = defaultdict(list)
+    for d in dataset.donations:
+        inflows[d.receiver_ref.entity_id].append(d)
+
+    found: set[str] = set()
+    for donation in dataset.donations:
+        if not donation.is_self_funded_declared:
+            continue
+        received = sum(
+            d.amount_idr
+            for d in inflows.get(donation.sender_ref.entity_id, ())
+            if 0 <= (donation.occurred_at - d.occurred_at).days <= 30
+        )
+        if received >= donation.amount_idr * 0.5:
+            found.add(donation.donation_id)
+    return found
+
+
+def _detect_unreported(dataset: SyntheticDataset) -> set[str]:
+    """Donation absent from the filings covering its date."""
+    submissions = dataset.submissions
+    found: set[str] = set()
+    for donation in dataset.donations:
+        occurred_on = donation.occurred_at.date()
+        if not submissions.covers(donation.electoral_context, occurred_on):
+            continue
+        declared = submissions.contains(
+            electoral_context=donation.electoral_context,
+            donor_ref=donation.sender_ref.entity_id,
+            recipient_ref=donation.receiver_ref.entity_id,
+            amount_idr=donation.amount_idr,
+            occurred_on=occurred_on,
+        )
+        if not declared:
+            found.add(donation.donation_id)
+    return found

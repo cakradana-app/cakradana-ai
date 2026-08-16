@@ -18,6 +18,7 @@ from typing import Iterable, Mapping
 from cakradana.calendar import CampaignPeriod, ElectoralCalendar
 from cakradana.history import PointInTimeView
 from cakradana.registers import RegisterSet
+from cakradana.reporting import SubmissionSet, no_submissions
 from cakradana.schema import Donation, Entity, EntityRef
 from cakradana.schema.enums import NON_INDIVIDUAL_DONOR_TYPES, EntityType, Regime
 from cakradana.rules.schema import Rule, RuleSet
@@ -120,6 +121,9 @@ class RuleContext:
     #: that a rule cannot reach for them on the donation and quietly find
     #: nothing.
     entities: Mapping[str, Entity] = field(default_factory=dict)
+    #: Campaign finance filings to reconcile against. Absent by default: the
+    #: filings are held by the electoral authority, not by this system.
+    submissions: SubmissionSet = field(default_factory=no_submissions)
     #: Annual periods are calendar years unless a deployment states otherwise.
     #: The statute fixes an annual cap without fixing the year boundary, so this
     #: is configuration rather than a constant.

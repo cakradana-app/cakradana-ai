@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict
 from cakradana.calendar import ElectoralCalendar
 from cakradana.history import PointInTimeView
 from cakradana.registers import RegisterSet, empty_register_set
+from cakradana.reporting import SubmissionSet, no_submissions
 from cakradana.rules.context import LimitTable, RuleContext, rule_applies
 from cakradana.rules.predicates import PredicateResult, get_predicate
 from cakradana.rules.schema import Rule, RuleSet
@@ -48,6 +49,15 @@ class RuleResult(BaseModel):
     label_weight: float | None = None
     facts: Mapping[str, object] = {}
     skipped_conditions: tuple[str, ...] = ()
+    #: False when the evidence behind this finding is not authoritative — a
+    #: fixture register standing in for one nobody has supplied. Such a
+    #: finding demonstrates that the rule works; it does not establish that
+    #: the donor did anything.
+    authoritative: bool = True
+
+    @property
+    def is_demonstration(self) -> bool:
+        return self.outcome is RuleOutcome.LEGAL_FINDING and not self.authoritative
 
 
 class RuleEvaluation(BaseModel):
@@ -114,12 +124,14 @@ class RuleEngine:
         *,
         calendar: ElectoralCalendar | None = None,
         registers: RegisterSet | None = None,
+        submissions: SubmissionSet | None = None,
         require_verified_citations: bool = True,
         annual_period_start_month: int = 1,
     ) -> None:
         self.ruleset = ruleset
         self.calendar = calendar or ElectoralCalendar()
         self.registers = registers or empty_register_set()
+        self.submissions = submissions or no_submissions()
         self.limits = LimitTable.from_ruleset(ruleset)
         self.require_verified_citations = require_verified_citations
         self.annual_period_start_month = annual_period_start_month
@@ -141,6 +153,7 @@ class RuleEngine:
             limits=self.limits,
             now=now,
             entities=entities or {},
+            submissions=self.submissions,
             annual_period_start_month=self.annual_period_start_month,
         )
 
@@ -241,10 +254,11 @@ class RuleEngine:
                 else (basis.threshold_idr if basis else None)
             ),
             observed=outcome.observed,
-            explanation=_render(rule, ctx, outcome),
+            explanation=_explain(rule, ctx, outcome),
             label_weight=rule.outcome.label_weight,
             facts=dict(outcome.facts),
             skipped_conditions=outcome.skipped,
+            authoritative=outcome.authoritative,
         )
 
     @staticmethod
@@ -256,6 +270,22 @@ class RuleEngine:
             typology=rule.typology,
             reason=reason,
         )
+
+
+def _explain(rule: Rule, ctx: RuleContext, outcome: PredicateResult) -> str:
+    """Render the explanation, marking any that rests on non-authoritative data.
+
+    The qualifier leads rather than trails. A reader who stops after the first
+    clause must not come away believing an offence has been established.
+    """
+    rendered = _render(rule, ctx, outcome)
+    if outcome.authoritative:
+        return rendered
+    return (
+        "DEMONSTRATION ONLY — this finding rests on fixture reference data, "
+        "not on the authoritative register, and establishes nothing about the "
+        f"donor: {rendered}"
+    )
 
 
 def _render(rule: Rule, ctx: RuleContext, outcome: PredicateResult) -> str:
