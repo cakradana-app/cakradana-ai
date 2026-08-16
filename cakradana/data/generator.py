@@ -99,6 +99,14 @@ class GeneratorConfig:
     period_start: date = date(2026, 1, 1)
     period_end: date = date(2026, 12, 31)
     electoral_context: str = "pemilu-2029"
+    #: The declared campaign window, a sub-span of the year rather than the
+    #: whole of it. Donations inside it fall under the campaign limits, which
+    #: are an order of magnitude higher than the annual party limits governing
+    #: the rest of the year. A calendar that marked the entire year as campaign
+    #: would judge every donation against the most permissive cap available and
+    #: leave the annual limits untested.
+    campaign_start: date = date(2026, 9, 1)
+    campaign_end: date = date(2026, 11, 24)
     reporting_deadline: date = date(2026, 10, 15)
     #: Recipients that attract genuine grassroots fan-in. Without benign
     #: convergence in the negatives, any fan-in detector scores perfectly here
@@ -280,6 +288,26 @@ class _Builder:
             start + timedelta(days=offset), datetime.min.time(), tzinfo=WIB
         ) + timedelta(hours=self.rng.randint(6, 21), minutes=self.rng.randint(0, 59))
 
+    def random_datetime_outside_campaign(self) -> datetime:
+        """A date governed by the annual party limits.
+
+        Patterns built to sit against a specific cap are placed where that cap
+        applies. The campaign limits are an order of magnitude higher, so a
+        contribution shaped to hug the annual limit is unremarkable inside a
+        campaign window, and generating it there would label a pattern the data
+        does not contain.
+        """
+        config = self.config
+        for _ in range(50):
+            when = self.random_datetime()
+            if not (config.campaign_start <= when.date() <= config.campaign_end):
+                return when
+        # Fall back to the start of the year, which is always outside the
+        # declared campaign window.
+        return datetime.combine(
+            config.period_start, datetime.min.time(), tzinfo=WIB
+        ) + timedelta(days=self.rng.randint(0, 30))
+
     def heavy_tailed_amount(self) -> int:
         """A donation amount from a heavy-tailed distribution.
 
@@ -328,10 +356,10 @@ def generate(config: GeneratorConfig | None = None) -> SyntheticDataset:
         [
             CampaignPeriod(
                 electoral_context=config.electoral_context,
-                start=config.period_start,
-                end=config.period_end,
+                start=config.campaign_start,
+                end=config.campaign_end,
                 reporting_deadlines=(config.reporting_deadline,),
-                label=str(config.period_start.year),
+                label=f"campaign {config.campaign_start.year}",
             )
         ]
     )
@@ -523,7 +551,7 @@ def _structuring(builder: _Builder, recipients: Sequence[Entity], target: int) -
             builder.next_id("structurer"), builder._person_name(), EntityType.INDIVIDUAL
         )
         recipient = rng.choice(recipients)
-        start = builder.random_datetime()
+        start = builder.random_datetime_outside_campaign()
         for i in range(rng.randint(3, 6)):
             ratio = rng.uniform(0.91, 0.985)
             builder.add(
@@ -548,7 +576,7 @@ def _cumulative(builder: _Builder, recipients: Sequence[Entity], target: int) ->
         n = rng.randint(4, 9)
         # Each donation lawful on its own; the sum is not.
         share = int(INDIVIDUAL_PARTY_LIMIT * rng.uniform(0.28, 0.45))
-        start = builder.random_datetime()
+        start = builder.random_datetime_outside_campaign()
         for i in range(n):
             builder.add(
                 donor,
