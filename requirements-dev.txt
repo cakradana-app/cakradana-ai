@@ -1,0 +1,3 @@
+-r requirements.txt
+pytest==8.2.2
+faker==25.9.1
