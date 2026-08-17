@@ -37,6 +37,12 @@ jobs:
       - name: Check every import is declared
         run: python3 scripts/check_dependencies.py
 
+      # A dependency declared in one manifest and absent from the other is
+      # resolved freshly on every deployment, which is the opposite of what
+      # pinning is for. numpy was in exactly that state.
+      - name: Check every dependency is pinned within its declared range
+        run: python3 scripts/check_pins.py
+
   tests:
     name: tests (python ${{ matrix.python }})
     runs-on: ubuntu-latest
