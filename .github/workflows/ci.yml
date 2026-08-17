@@ -1,0 +1,83 @@
+# Continuous integration for the detection library and scoring service.
+#
+# Every defect the current-state audit found was reachable by a test that did
+# not exist. The stages below are ordered by how quickly they fail: a missing
+# dependency or a committed credential should stop the run in seconds rather
+# than after a full test suite.
+#
+# The stages that matter most here are parity and the leakage canary. Train/serve
+# divergence and point-in-time leakage produce no error, invalidate every metric
+# downstream of them, and are invisible to conventional unit testing — which is
+# exactly why they are enforced by the build rather than by discipline.
+
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Cheap and absolute. A committed credential is in every clone already,
+      # so catching it before the rest of the run is the only useful moment.
+      - name: Scan for committed credentials
+        run: python3 scripts/scan_secrets.py
+
+      # Parses rather than imports, so it needs nothing installed and runs
+      # before the install that it is checking the manifest for.
+      - name: Check every import is declared
+        run: python3 scripts/check_dependencies.py
+
+  tests:
+    name: tests (python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest version the project claims to support, and a current one.
+        # Testing only the newest is how a stated floor quietly stops being true.
+        python: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -e .
+
+      # Unit and property tests, including the Tier-1 rule properties. The
+      # missing-data property is the one that matters: a rule that silently
+      # passes when it could not be evaluated turns an unevaluated donation
+      # into an apparently clean one.
+      - name: Test
+        run: pytest -q
+
+      # Named separately so a failure here is legible in the run list rather
+      # than buried in a suite summary. These two are the ones whose failure
+      # invalidates published metrics.
+      - name: Train/serve parity and point-in-time correctness
+        run: pytest -q tests/test_features.py tests/test_history.py tests/test_evaluation.py
+
+      - name: Golden sets — rules, typologies, and the benign set
+        run: pytest -q tests/test_rules.py tests/test_generator.py tests/test_alerts.py
+
+      # Verifies that each generated typology is recoverable by its defining
+      # signal. A generator whose typologies are labels rather than structure
+      # trains a model on noise, and nothing else detects that.
+      - name: Synthetic data acceptance
+        run: cakradana generate --donations 2000
