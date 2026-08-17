@@ -15,7 +15,7 @@ import pytest
 from pydantic import ValidationError
 
 from cakradana.cli import main
-from cakradana.scoring.catalogue import codes
+from cakradana.scoring.catalogue import catalogue, stateable_codes
 from cakradana.scoring.result import ReviewStatus
 from cakradana.scoring.review import (
     REVIEW_FILE,
@@ -186,11 +186,20 @@ class TestWhatIsShipped:
         implicit so that the first recorded review has to be a deliberate
         change to this test as well as to the ledger."""
         coverage = default_ledger().coverage()
-        assert coverage.total == len(codes())
+        assert coverage.total == len(stateable_codes())
         assert coverage.validated == ()
         assert coverage.rejected == ()
         assert len(coverage.unreviewed) == coverage.total
         assert coverage.complete is False
+
+    def test_a_code_carrying_no_wording_is_not_counted_as_outstanding(self):
+        """There is nothing to accept about a sentence that does not exist.
+
+        Counting them would let the figure that gates promotion be raised by
+        decisions about wording nobody will ever read."""
+        barred = {e.code for e in catalogue() if not e.analyst_facing}
+        assert barred
+        assert not barred & set(default_ledger().coverage().unreviewed)
 
 
 class TestTheCommandAnAnalystRuns:

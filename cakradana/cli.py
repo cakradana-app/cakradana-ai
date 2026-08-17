@@ -195,18 +195,37 @@ def _ledger(path: Path) -> ReviewLedger:
 
 
 def _list_reason_codes(args) -> int:
+    """List the codes with the sentence each one puts in front of a reader.
+
+    The wording is what is under review, so the wording is what is printed. A
+    listing that showed only a code and a summary would be a list of labels,
+    and a reviewer would have to open every one to find out what the system
+    actually says.
+    """
     ledger = _ledger(args.file)
-    width = max(len(entry.code) for entry in catalogue())
+    barred = [entry for entry in catalogue() if not entry.analyst_facing]
     shown = 0
     for entry in catalogue():
+        if not entry.analyst_facing:
+            continue
         status = ledger.status_of(entry.code)
         if args.status != "all" and status.value != args.status:
             continue
         shown += 1
-        lanes = "/".join(str(lane) for lane in entry.lanes)
-        print(f"  {entry.code:<{width}}  {status.value:<10}  {lanes:<10}  {entry.observation}")
+        print(f"  {entry.code}  [{status}]")
+        for statement in entry.statements:
+            print(f"      {statement}")
     if not shown:
         print(f"  no code is {args.status}")
+
+    if barred:
+        print(
+            f"\n{len(barred)} further code(s) carry no wording and are never "
+            f"shown to anybody, so there is nothing to review:"
+        )
+        for entry in barred:
+            print(f"  {entry.code}  — {entry.observation}")
+
     print(f"\n{ledger.coverage().describe()}")
     return 0
 
@@ -249,10 +268,17 @@ def _record_reason_code_decision(args) -> int:
     for, so a decision cannot be recorded by pressing return past a question.
     """
     try:
-        if entry_for(args.code) is None:
+        entry = entry_for(args.code)
+        if entry is None:
             raise ReviewRefused(
                 f"{args.code} is not a code this system emits; a review of "
                 f"wording nobody will ever see is not coverage of anything"
+            )
+        if not entry.analyst_facing:
+            raise ReviewRefused(
+                f"{args.code} carries no wording and is never shown to "
+                f"anybody, so there is nothing to accept or reject: "
+                f"{entry.observation}"
             )
         decision = ReviewDecision(
             code=args.code,

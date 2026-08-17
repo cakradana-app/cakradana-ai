@@ -28,7 +28,7 @@ from typing import Iterable, Sequence
 import yaml
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from cakradana.scoring.catalogue import codes
+from cakradana.scoring.catalogue import stateable_codes
 from cakradana.scoring.result import ReviewStatus
 
 #: Reviews live beside the wording they are about, so that a change to a
@@ -169,14 +169,14 @@ class ReviewLedger:
         return decision.status if decision else ReviewStatus.UNREVIEWED
 
     def statuses(self, over: Sequence[str] | None = None) -> dict[str, ReviewStatus]:
-        declared = tuple(over) if over is not None else codes()
+        declared = tuple(over) if over is not None else stateable_codes()
         return {code: self.status_of(code) for code in declared}
 
     def record(self, decision: ReviewDecision) -> ReviewLedger:
         return ReviewLedger(self._decisions + (decision,))
 
     def coverage(self, over: Sequence[str] | None = None) -> ReviewCoverage:
-        declared = tuple(over) if over is not None else codes()
+        declared = tuple(over) if over is not None else stateable_codes()
         statuses = self.statuses(declared)
         return ReviewCoverage(
             total=len(declared),
@@ -263,7 +263,7 @@ def default_statuses() -> dict[str, ReviewStatus]:
     """
     ledger = default_ledger()
     if ledger is None:
-        return {code: ReviewStatus.UNREVIEWED for code in codes()}
+        return {code: ReviewStatus.UNREVIEWED for code in stateable_codes()}
     return ledger.statuses()
 
 
