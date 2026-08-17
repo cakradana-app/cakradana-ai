@@ -40,6 +40,7 @@ def manifest(**overrides) -> dict:
             "lift_at_b": 1.8,
             "expected_calibration_error": 0.04,
         },
+        "redundancy": {"rows": 800, "clean": True, "findings": []},
         "ships": True,
     }
     base.update(overrides)
@@ -192,6 +193,52 @@ class TestGates:
         gate = next(g for g in report.results if g.gate == "G13")
         assert gate.passed is False
         assert "affiliation" in gate.detail
+
+    def test_a_duplicated_feature_blocks(self):
+        report = passing_report(
+            artifact_overrides={
+                "redundancy": {
+                    "rows": 800,
+                    "clean": False,
+                    "findings": [
+                        {
+                            "kind": "identical",
+                            "columns": ["degree_centrality_sender", "sender_out_degree"],
+                            "detail": "identical in every row",
+                        }
+                    ],
+                }
+            }
+        )
+        gate = next(g for g in report.results if g.gate == "G8")
+        assert gate.passed is False
+        assert "degree_centrality_sender" in gate.detail
+
+    def test_a_constant_column_alone_does_not_block(self):
+        """A feature whose inputs are absent in this dataset is a data problem
+        worth reporting, but it is not a reason to refuse the model."""
+        report = passing_report(
+            artifact_overrides={
+                "redundancy": {
+                    "rows": 800,
+                    "clean": False,
+                    "findings": [
+                        {
+                            "kind": "constant",
+                            "columns": ["has_unresolved_entity"],
+                            "detail": "every row holds False",
+                        }
+                    ],
+                }
+            }
+        )
+        assert next(g for g in report.results if g.gate == "G8").passed is True
+
+    def test_a_run_that_never_checked_for_duplicates_blocks(self):
+        report = passing_report(artifact_overrides={"redundancy": None})
+        gate = next(g for g in report.results if g.gate == "G8")
+        assert gate.passed is None
+        assert gate.blocks
 
     def test_an_even_handed_model_clears_the_fairness_gate(self):
         report = passing_report()

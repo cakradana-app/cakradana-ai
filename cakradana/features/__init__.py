@@ -8,6 +8,11 @@ from cakradana.features.definitions import (
     feature_names,
     numeric_names,
 )
+from cakradana.features.redundancy import (
+    Redundancy,
+    RedundancyReport,
+    detect_redundancy,
+)
 from cakradana.features.service import FeatureService, FeatureVector, feature_set_version
 
 # Imported for its side effect of registering the network features. Without
@@ -20,7 +25,10 @@ __all__ = [
     "FeatureSpec",
     "FeatureValue",
     "FeatureVector",
+    "Redundancy",
+    "RedundancyReport",
     "catalogue",
+    "detect_redundancy",
     "categorical_names",
     "feature_names",
     "feature_set_version",

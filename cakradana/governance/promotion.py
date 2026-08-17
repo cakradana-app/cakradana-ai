@@ -195,6 +195,43 @@ def evaluate_gates(
             )
         )
 
+    redundancy = manifest.get("redundancy")
+    if not isinstance(redundancy, dict):
+        results.append(
+            GateResult(
+                "G8",
+                "No redundant features",
+                None,
+                "the manifest records no redundancy check; an importance "
+                "ranking from this run cannot be read, because a duplicated "
+                "column splits its importance and neither copy looks important",
+            )
+        )
+    else:
+        blocking_kinds = {"identical", "affine"}
+        offenders = [
+            finding
+            for finding in redundancy.get("findings", [])
+            if finding.get("kind") in blocking_kinds
+        ]
+        results.append(
+            GateResult(
+                "G8",
+                "No redundant features",
+                None
+                if redundancy.get("clean") is None
+                else not offenders,
+                redundancy.get("unmeasurable_reason")
+                or (
+                    "; ".join(
+                        f"{f['kind']}: {', '.join(f['columns'])}" for f in offenders
+                    )
+                    if offenders
+                    else f"no duplicated column over {redundancy.get('rows')} rows"
+                ),
+            )
+        )
+
     ece = _metric(manifest, "expected_calibration_error")
     results.append(
         GateResult(

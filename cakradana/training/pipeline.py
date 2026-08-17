@@ -33,7 +33,7 @@ from cakradana.evaluation.metrics import (
     select_threshold,
 )
 from cakradana.evaluation.splits import SplitSet, donor_cohort_split
-from cakradana.features import FeatureService
+from cakradana.features import FeatureService, RedundancyReport, detect_redundancy
 from cakradana.history import DonationStore
 from cakradana.rules import RuleEngine
 from cakradana.schema import Entity
@@ -91,6 +91,7 @@ class TrainingResult:
     average_precision: float
     label_basis: LabelBasis
     splits: Mapping[str, object]
+    redundancy: RedundancyReport | None = None
     manifest: dict[str, object] = field(default_factory=dict)
 
     @property
@@ -199,6 +200,11 @@ def train(
         average_precision=average_precision(scored_test),
         label_basis=label_basis,
         splits=splits.summary(),
+        # Checked on the fitted rows, so what is examined is what the model was
+        # actually shown. A duplicate pair splits attributed importance between
+        # its members, which corrupts the one artefact that would otherwise
+        # make the duplication visible.
+        redundancy=detect_redundancy([row.features for row in train_rows]),
     )
     result.manifest = _manifest(result, data, config, splits, features, engine)
     return result
@@ -261,6 +267,24 @@ def _manifest(
             ),
         },
         "label_basis": asdict(result.label_basis),
+        # Recorded so an importance ranking read later can be trusted, or not.
+        "redundancy": (
+            {
+                "rows": result.redundancy.rows,
+                "clean": result.redundancy.clean,
+                "unmeasurable_reason": result.redundancy.unmeasurable_reason,
+                "findings": [
+                    {
+                        "kind": finding.kind,
+                        "columns": list(finding.columns),
+                        "detail": finding.detail,
+                    }
+                    for finding in result.redundancy.findings
+                ],
+            }
+            if result.redundancy is not None
+            else None
+        ),
         "ships": result.should_ship,
     }
 
