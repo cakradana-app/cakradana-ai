@@ -30,6 +30,7 @@ from cakradana.features import FeatureService
 from cakradana.history import InMemoryDonationStore
 from cakradana.rules import RuleEngine, load_latest
 from cakradana.scoring.catalogue import catalogue, entry_for, wording_defects
+from cakradana.scoring.proposals import proposal_for
 from cakradana.scoring.result import ReviewStatus
 from cakradana.scoring.review import (
     REVIEW_FILE,
@@ -140,6 +141,18 @@ def _add_reason_code_actions(command: argparse.ArgumentParser) -> None:
 
     actions = command.add_subparsers(dest="reason_action", required=True)
 
+    worksheet = actions.add_parser(
+        "worksheet",
+        parents=[shared],
+        help="every unreviewed code, with a drafted disposition to agree or disagree with",
+    )
+    worksheet.add_argument(
+        "--status",
+        choices=("unreviewed", "validated", "rejected", "all"),
+        default="unreviewed",
+        help="which codes to work through (default: the ones nobody has read)",
+    )
+
     listing = actions.add_parser(
         "list", parents=[shared], help="every code, with its review state"
     )
@@ -186,6 +199,8 @@ def _reason_codes(args) -> int:
         return _show_reason_code(args)
     if args.reason_action == "coverage":
         return _reason_code_coverage(args)
+    if args.reason_action == "worksheet":
+        return _reason_code_worksheet(args)
     return _record_reason_code_decision(args)
 
 
@@ -226,6 +241,75 @@ def _list_reason_codes(args) -> int:
         for entry in barred:
             print(f"  {entry.code}  — {entry.observation}")
 
+    print(f"\n{ledger.coverage().describe()}")
+    return 0
+
+
+def _reason_code_worksheet(args) -> int:
+    """Every code to be reviewed, with a drafted reading beside its wording.
+
+    The ledger sat empty not because the mechanism was missing but because
+    reading fifty-one sentences from a blank page is work nobody schedules. A
+    draft turns that into agreeing or disagreeing, which is a task a person
+    completes — and each entry ends with the exact command, so the distance
+    between deciding and recording the decision is a copy and a paste.
+
+    Nothing here writes anything. The draft is somebody's reading; the decision
+    is a named person's conclusion, and a worksheet that could record one would
+    be the bulk accept this command set refuses to have.
+    """
+    ledger = _ledger(args.file)
+    shown = 0
+    for entry in catalogue():
+        if not entry.analyst_facing:
+            continue
+        status = ledger.status_of(entry.code)
+        if args.status != "all" and status.value != args.status:
+            continue
+        shown += 1
+
+        print(f"{'=' * 72}")
+        print(f"{entry.code}   [{status}]")
+        print(f"  lane      {'/'.join(str(lane) for lane in entry.lanes)}")
+        print(f"  from      {entry.source}")
+        print(f"  states    {entry.observation}")
+        print("\n  wording as an analyst reads it:")
+        for statement in entry.statements:
+            print(f"    {statement}")
+        if entry.comparison:
+            print(f"\n  how to read the figure:\n    {entry.comparison}")
+
+        defects = wording_defects(entry)
+        if defects:
+            print("\n  machine-checkable problems:")
+            for defect in defects:
+                print(f"    {defect}")
+
+        proposal = proposal_for(entry.code)
+        if proposal is None:
+            print("\n  drafted: none — no reading was written for this one")
+        else:
+            source = "one class, assessed together" if proposal.grouped else "written for this code"
+            print(f"\n  drafted: {proposal.propose.upper()}  ({source})")
+            print(f"    {proposal.note}")
+            for check in proposal.checked:
+                print(f"      - {check}")
+            print(
+                f"\n  to agree:\n"
+                f"    cakradana reason-codes {proposal.propose} --code {entry.code} \\\n"
+                f"      --reviewer YOUR_NAME --note 'YOUR REASONING'"
+            )
+
+    if not shown:
+        print(f"no code is {args.status}")
+        return 0
+
+    print(f"{'=' * 72}")
+    print(
+        f"\n{shown} code(s) to work through. The drafted dispositions are a "
+        f"reading,\nnot a decision: nothing above has changed any code's status, "
+        f"and the\npromotion gate stays closed until a named person records one."
+    )
     print(f"\n{ledger.coverage().describe()}")
     return 0
 

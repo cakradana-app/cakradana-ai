@@ -1,0 +1,143 @@
+# Drafted dispositions for reason-code wording. These are not decisions.
+#
+# The review ledger records what a named person concluded after reading a
+# sentence. This file records what somebody proposed they conclude, so that a
+# reviewer starts from a reading rather than from fifty-one blank sentences.
+# Nothing here changes a code's review status, nothing here opens the promotion
+# gate, and `reason-codes worksheet` prints these beside the wording precisely
+# so that the two stay visibly distinct.
+#
+# The criterion applied throughout is the catalogue's own: a reason states an
+# observation, not a conclusion about what the observation means, and never a
+# property of the model rather than of the donation. The audience is an analyst
+# — the subject-facing attribution basis carries no behavioural reason at all,
+# only the record and any statutory finding — so the test is whether the
+# sentence is something an analyst can check, act on, and quote into a case
+# note, not whether it is safe to put to the person it is about.
+#
+# A rejection is not a claim that the code is wrong. It is a claim that the
+# sentence is, and the remedy is to rewrite the sentence.
+version: 1
+
+proposals:
+  - code: MODEL_SCORE
+    propose: reject
+    note: >-
+      States nothing observable. "Ranked above most others" is a property of the
+      model's output distribution, not of this donation, and there is nothing in
+      it an analyst can check against the record or quote into a case note. The
+      three things it names — donor history, recipient pattern, amount — are the
+      inputs, so the sentence describes the model rather than the donation. The
+      lane's own contribution is already stated by the specific codes beside it;
+      this adds a summary of the model to a list that is supposed to be evidence.
+
+  - code: UNUSUAL_COMBINATION
+    propose: reject
+    note: >-
+      Unfalsifiable as written. "Unlike the donations around it" names no
+      quantity, no comparison set, and no threshold, so an analyst cannot tell
+      whether it is a near miss or an extreme, and cannot disagree with it. The
+      honest form of an anomaly reason states which quantities were unusual and
+      by how much against what population; without that the code says only that
+      the anomaly lane fired, which its presence in the list already says.
+
+  - code: PASS_THROUGH
+    propose: reject
+    note: >-
+      "Forwarded" is the conclusion, not the observation. What is observed is
+      that money arrived and money left within a window; that the second is the
+      first passing through is precisely what the analyst is being asked to
+      decide, and the sentence decides it for them. "Received {inflow_total} and
+      then donated {outflow} within {lag_days} days" states the same facts and
+      leaves the inference where it belongs. The ratio is fine and should stay.
+
+  - code: LAYERING_CHAIN
+    propose: reject
+    note: >-
+      Three conclusions in one sentence. "Layering" is a term of art for a
+      deliberate laundering stage, "chain" asserts the donations are connected
+      rather than co-occurring, and "intermediate entities" asserts a role for
+      parties who may simply have donated. The observation is that these
+      donations occurred in this sequence, between these parties, inside this
+      window. An analyst who reads that may well conclude layering; the reason
+      should not conclude it for them, and an entity described as intermediate
+      in a case note has been characterised by the system rather than by a
+      person.
+
+  - code: STD_DONASI_SENDER
+    propose: reject
+    note: >-
+      Depends on a sentence that may not be there. "Either side of that average"
+      refers to the average stated by RATA_RATA_DONASI_SENDER, and nothing
+      guarantees that code is present, or adjacent, in the same reason list. Read
+      alone it is a figure with no referent. Restating the average, or naming it
+      — "varied by {value} either side of the donor's average donation" — makes
+      the sentence stand on its own, which every one of them has to.
+
+  - code: ADVERSE_COVERAGE
+    propose: accept
+    note: >-
+      The disclaimer is doing real work and is the reason this passes. Coverage
+      of a person is evidence about what was published, not about what they did,
+      and the sentence says exactly that in its own words rather than leaving it
+      to be understood. Counts and independent-source counts are checkable, and
+      the stage of proceedings is stated rather than characterised.
+
+  - code: RECEIVER_IN_DEGREE_VELOCITY_14D
+    propose: accept
+    note: >-
+      Checkable and correctly scoped to a window. "First appeared" means first
+      appeared in these records rather than first donated in life, which is the
+      only thing this system could know; the surrounding codes use "recorded"
+      for the same idea and this one would read better with it, but the claim is
+      not wrong and an analyst reading a system's own reason list will not take
+      it as a claim about the world.
+
+  - code: IN_STRUCTURING_BAND
+    propose: accept
+    note: >-
+      The wording states the band and nothing else, which is right — the code
+      name asserts structuring and the sentence does not, so what reaches a
+      reader is the observation and what stays internal is the hypothesis. Worth
+      keeping that split deliberately: the code name must never be rendered.
+
+  - code: HAS_UNRESOLVED_ENTITY
+    propose: accept
+    note: >-
+      States a limit of the evidence rather than a finding about a party, and
+      states it plainly. It makes every other reason in the list weaker, which
+      is the correct effect and the reason it belongs there.
+
+  - code: LANE_UNAVAILABLE
+    propose: accept
+    note: >-
+      The distinction it carries is the one that matters most in this system: a
+      check that did not run is not a check that passed. "Lane" is internal
+      vocabulary, and acceptable here because the audience is an analyst who
+      works in these terms; it would not be acceptable in anything shown to a
+      subject, and nothing shown to a subject uses it.
+
+# Every analyst-facing code not named above.
+#
+# Grouped rather than given forty-one separate paragraphs, because forty-one
+# paragraphs saying the same thing would read as forty-one readings and be one.
+# They are one class: a single quantity or fact drawn from the record or the
+# donor's own history, stated with its unit and its window, asserting nothing
+# about what it means.
+#
+# The reviewer still decides each one individually — there is no bulk accept,
+# by design — but they are told what was checked rather than left to infer it.
+default:
+  propose: accept
+  note: >-
+    States one quantity from the record or the donor's own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for
+    the four things that make a reason unusable: a conclusion in place of an
+    observation, a property of the model rather than of the donation, a
+    quantity with no stated window or comparison, and a sentence that only
+    reads correctly beside another one. None is present.
+  checked:
+    - the sentence states an observation, not what the observation implies
+    - no model internal — no weight, no feature index, no score
+    - every quantity carries its unit, and every window its length
+    - the sentence stands alone, without depending on a neighbouring reason
