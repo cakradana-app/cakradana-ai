@@ -102,6 +102,52 @@ class Register:
     def __len__(self) -> int:
         return len(self._entries)
 
+    def status(self, now: datetime | None = None) -> dict:
+        """What state this register is in, for somebody operating the system.
+
+        A register that quietly went stale looks, from the outside, exactly
+        like a population in which nobody is a prohibited source: the dependent
+        rules return indeterminate, no error is raised, and the queue simply
+        stops containing that kind of finding. This is where that becomes
+        visible.
+
+        ``usable`` is the single field worth acting on. It is false both when a
+        register was never supplied and when it has aged out, because the rules
+        treat those identically, and a status that distinguished them without
+        saying so would invite reading one as the other.
+        """
+        now = now or datetime.now(tz=timezone.utc)
+        stale = self._available and self.is_stale(now)
+        return {
+            "name": self.name,
+            "available": self._available,
+            "authoritative": self.authoritative,
+            "entries": len(self._entries),
+            "refreshed_at": (
+                self._refreshed_at.isoformat() if self._refreshed_at else None
+            ),
+            "max_age_days": (
+                self._max_age.days if self._max_age is not None else None
+            ),
+            "stale": stale,
+            "usable": self._available and not stale,
+            "reason": (
+                None
+                if self._available and not stale
+                else "register is stale and cannot be relied on"
+                if stale
+                else self._unavailable_reason
+            ),
+            # Stated per register rather than in a document elsewhere: the
+            # consequence of this one being unusable is specific to it.
+            "consequence": (
+                None
+                if self._available and not stale
+                else f"rules depending on {self.name} return indeterminate rather "
+                f"than passing, so no finding of this kind will be raised"
+            ),
+        }
+
     def is_stale(self, now: datetime) -> bool:
         if self._max_age is None:
             return False
@@ -204,6 +250,21 @@ class RegisterSet:
         entity_name: str | None = None,
     ) -> RegisterLookup:
         return self.get(name).lookup(entity_id, when=when, now=now, name=entity_name)
+
+    def status(self, now: datetime | None = None) -> tuple[dict, ...]:
+        """Every declared register's state, unusable ones first.
+
+        Ordered that way because the list is read to find what is wrong, and a
+        reader who has to scan past the healthy entries to find the stale one
+        will eventually stop scanning.
+        """
+        now = now or datetime.now(tz=timezone.utc)
+        declared = {
+            **{r.name: r for r in empty_register_set()._registers.values()},
+            **self._registers,
+        }
+        found = [register.status(now) for register in declared.values()]
+        return tuple(sorted(found, key=lambda s: (s["usable"], s["name"])))
 
 
 def empty_register_set() -> RegisterSet:

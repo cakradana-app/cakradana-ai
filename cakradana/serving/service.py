@@ -206,6 +206,16 @@ class ScoringService:
     # -- introspection ---------------------------------------------------
 
     @property
+    def registers(self) -> RegisterSet:
+        """The reference lists the rules are being evaluated against.
+
+        Read from the scorer rather than stored a second time. Two copies of
+        this would let an operator read a freshness report describing registers
+        the engine is not using.
+        """
+        return self.scorer.engine.registers
+
+    @property
     def available_lanes(self) -> tuple[str, ...]:
         return tuple(str(lane.name) for lane in self.scorer.lanes)
 

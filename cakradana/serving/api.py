@@ -206,6 +206,33 @@ def create_app(service: ScoringService | None = None) -> FastAPI:
             lanes_available=svc.available_lanes,
         )
 
+    @app.get(f"{API_PREFIX}/registers")
+    def registers(
+        svc: ScoringService = Depends(current_service),
+        _: None = Depends(require_token),
+    ) -> dict:
+        """Which reference lists are usable, and which are not.
+
+        A register that quietly went stale looks, from outside, exactly like a
+        population in which nobody is a prohibited source: the dependent rules
+        return indeterminate, nothing raises, and the queue simply stops
+        containing that kind of finding. Nothing else in the system would show
+        it, so it is reported here.
+
+        Unusable registers come first, because this list is read to find what
+        is wrong and a reader who has to scan past healthy rows will stop
+        scanning.
+        """
+        found = svc.registers.status()
+        return {
+            "registers": list(found),
+            "usable": sum(1 for item in found if item["usable"]),
+            "total": len(found),
+            "rules_affected": [
+                item["name"] for item in found if not item["usable"]
+            ],
+        }
+
     @app.get(f"{API_PREFIX}/rules")
     def rules(
         svc: ScoringService = Depends(current_service),
