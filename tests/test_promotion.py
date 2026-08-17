@@ -23,6 +23,9 @@ from cakradana.governance.promotion import (
     promote,
     promoted_versions,
 )
+from cakradana.scoring.catalogue import codes
+from cakradana.scoring.result import ReviewStatus
+from cakradana.scoring.review import ReviewDecision, ReviewLedger
 from cakradana.training.registry import Artifact, ArtifactError
 
 
@@ -78,8 +81,28 @@ def even_handed_population() -> list[Cohort]:
     ]
 
 
+def fully_reviewed() -> ReviewLedger:
+    """A ledger in which every code has been read and accepted.
+
+    Constructed rather than shipped: the real one is empty, and the gate that
+    reads it is meant to block. This is what the other gates need in order to
+    be tested on their own terms.
+    """
+    return ReviewLedger(
+        ReviewDecision(
+            code=code,
+            status=ReviewStatus.VALIDATED,
+            reviewer="analis@example.org",
+            reviewed_at=datetime(2026, 8, 17, tzinfo=timezone.utc),
+            note="reads as an observation",
+        )
+        for code in codes()
+    )
+
+
 def passing_report(**kwargs) -> GateReport:
     kwargs.setdefault("fairness", assess(even_handed_population()))
+    kwargs.setdefault("reason_reviews", fully_reviewed())
     return evaluate_gates(
         artifact(**kwargs.pop("artifact_overrides", {})),
         shadow_period_completed=True,
@@ -347,3 +370,78 @@ class TestCurrent:
         assert live is not None
         assert live.version == "lgbm-2026.08.1"
         assert live.note == "shadow ran for two weeks"
+
+
+class TestReasonWordingGate:
+    """G10. A score nobody can explain is not a score anybody can defend.
+
+    The gate reads a shipped record rather than taking a caller's word for it,
+    and it fails today because nothing in that record says anybody has read the
+    sentences the system puts in front of an analyst.
+    """
+
+    def gate(self, report: GateReport) -> object:
+        return next(g for g in report.results if g.gate == "G10")
+
+    def test_nothing_reviewed_blocks(self):
+        report = passing_report(reason_reviews=ReviewLedger())
+        assert self.gate(report).passed is False
+        assert self.gate(report).blocks
+
+    def test_the_shipped_state_of_this_system_blocks(self):
+        """Asserted against the real ledger, not a fixture. If this ever
+        passes without somebody recording a review, the gate has stopped
+        measuring anything."""
+        report = evaluate_gates(artifact())
+        assert self.gate(report).passed is False
+        assert "0 of" in self.gate(report).detail
+
+    def test_a_wording_found_misleading_blocks_even_if_everything_else_is_read(self):
+        ledger = ReviewLedger(
+            [
+                *fully_reviewed().decisions,
+                ReviewDecision(
+                    code="LANE_UNAVAILABLE",
+                    status=ReviewStatus.REJECTED,
+                    reviewer="analis@example.org",
+                    reviewed_at=datetime(2026, 8, 18, tzinfo=timezone.utc),
+                    note="names the lane but not what the reader should do next",
+                ),
+            ]
+        )
+        report = passing_report(reason_reviews=ledger)
+        assert self.gate(report).passed is False
+        assert "misleading" in self.gate(report).detail
+
+    def test_a_missing_ledger_is_not_evaluated_rather_than_passed(self, monkeypatch):
+        monkeypatch.setattr(
+            "cakradana.governance.promotion.default_ledger", lambda: None
+        )
+        report = evaluate_gates(artifact())
+        assert self.gate(report).passed is None
+        assert self.gate(report).blocks
+
+    def test_every_wording_read_and_accepted_clears_it(self):
+        report = passing_report(reason_reviews=fully_reviewed())
+        assert self.gate(report).passed is True
+
+    def test_the_gate_cannot_be_waived(self, tmp_path):
+        """There is no force argument anywhere in this module, and a report
+        carrying a blocking gate refuses however it was assembled."""
+        directory = tmp_path / "lgbm-2026.08.1"
+        directory.mkdir()
+        (directory / "MODEL_CARD.md").write_text("# card", encoding="utf-8")
+        report = GateReport(
+            tuple(
+                g
+                for g in passing_report(reason_reviews=ReviewLedger()).results
+                if g.gate != "G14"
+            )
+        )
+        with pytest.raises(PromotionRefused, match="G10"):
+            promote(
+                "lgbm-2026.08.1",
+                approved_by="ml-lead@example.org",
+                report=report,
+                root=tmp_path,
+            )

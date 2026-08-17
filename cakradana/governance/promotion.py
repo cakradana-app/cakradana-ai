@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Sequence
 
 from cakradana.evaluation.fairness import FairnessReport
+from cakradana.scoring.review import ReviewLedger, default_ledger
 from cakradana.training.registry import ARTIFACT_ROOT, Artifact, ArtifactError
 
 PROMOTION_FILE = "PROMOTION.json"
@@ -103,6 +104,7 @@ def evaluate_gates(
     golden_sets_passed: bool | None = None,
     precision_floor: float | None = None,
     fairness: FairnessReport | None = None,
+    reason_reviews: ReviewLedger | None = None,
 ) -> GateReport:
     """Check an artifact against the promotion gates.
 
@@ -111,6 +113,12 @@ def evaluate_gates(
     outgoing model's precision floor is, and what the fairness assessment found.
     Left unset they are reported as unevaluated, which blocks — because the
     alternative is a promotion record that claims checks nobody performed.
+
+    ``reason_reviews`` is the exception: the record of who read which reason
+    wording ships with the code, so an unset one is read rather than assumed
+    absent, and the gate reports a measured figure instead of an unevaluated
+    one. It measures 0 accepted today, which blocks, and that is the check
+    working rather than a defect in it.
     """
     manifest = artifact.manifest
     results: list[GateResult] = []
@@ -243,6 +251,31 @@ def evaluate_gates(
             else "no calibration error recorded",
         )
     )
+
+    ledger = reason_reviews if reason_reviews is not None else default_ledger()
+    if ledger is None:
+        results.append(
+            GateResult(
+                "G10",
+                "Reason wording reviewed",
+                None,
+                "no record of who reviewed the reason wording is present; the "
+                "sentences an analyst triages on cannot be shown to have been "
+                "read by anybody",
+            )
+        )
+    else:
+        coverage = ledger.coverage()
+        results.append(
+            GateResult(
+                "G10",
+                "Reason wording reviewed",
+                coverage.complete,
+                f"{coverage.describe()}; a reason is what an analyst acts on "
+                f"and what a subject is shown, and one nobody has read is not "
+                f"an explanation the system can stand behind",
+            )
+        )
 
     results.append(
         GateResult(
