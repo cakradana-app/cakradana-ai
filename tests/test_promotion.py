@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from cakradana.evaluation.fairness import Cohort, assess
 from cakradana.governance.promotion import (
     MAX_CALIBRATION_ERROR,
     MIN_LIFT,
@@ -57,7 +58,27 @@ def artifact(**overrides) -> Artifact:
     )
 
 
+def even_handed_population() -> list[Cohort]:
+    """A population on which no group is flagged in error more than another."""
+    amounts = (5_000_000, 50_000_000, 500_000_000, 5_000_000_000)
+    return [
+        Cohort(
+            donation_id=f"d-{index}",
+            score=0.5,
+            flagged=index % 7 == 0,
+            affiliation=f"Partai{'AB'[index % 2]}",
+            district=("Jakarta", "Surabaya")[index % 2],
+            recipient_type="candidate" if index % 3 else "party",
+            amount_idr=amounts[index % 4],
+            reviewed=True,
+            confirmed_risky=False,
+        )
+        for index in range(800)
+    ]
+
+
 def passing_report(**kwargs) -> GateReport:
+    kwargs.setdefault("fairness", assess(even_handed_population()))
     return evaluate_gates(
         artifact(**kwargs.pop("artifact_overrides", {})),
         shadow_period_completed=True,
@@ -124,6 +145,58 @@ class TestGates:
     def test_the_description_names_what_blocked(self):
         report = evaluate_gates(artifact())
         assert "blocked by" in report.describe()
+
+    def test_an_absent_fairness_assessment_blocks(self):
+        """A model whose output tracks party affiliation clears every other
+        gate here. Nothing else in the report would notice."""
+        report = evaluate_gates(
+            artifact(),
+            shadow_period_completed=True,
+            golden_sets_passed=True,
+            precision_floor=0.5,
+        )
+        fairness = next(g for g in report.results if g.gate == "G13")
+        assert fairness.passed is None
+        assert fairness.blocks
+
+    def test_a_measured_disparity_blocks_and_names_the_dimension(self):
+        biased = [
+            *(
+                Cohort(
+                    donation_id=f"a-{i}",
+                    score=0.5,
+                    flagged=i < 80,
+                    affiliation="PartaiA",
+                    district="Jakarta",
+                    recipient_type="candidate",
+                    amount_idr=5_000_000,
+                    reviewed=True,
+                )
+                for i in range(200)
+            ),
+            *(
+                Cohort(
+                    donation_id=f"b-{i}",
+                    score=0.5,
+                    flagged=i < 20,
+                    affiliation="PartaiB",
+                    district="Surabaya",
+                    recipient_type="candidate",
+                    amount_idr=5_000_000,
+                    reviewed=True,
+                )
+                for i in range(200)
+            ),
+        ]
+        report = passing_report(fairness=assess(biased))
+        gate = next(g for g in report.results if g.gate == "G13")
+        assert gate.passed is False
+        assert "affiliation" in gate.detail
+
+    def test_an_even_handed_model_clears_the_fairness_gate(self):
+        report = passing_report()
+        gate = next(g for g in report.results if g.gate == "G13")
+        assert gate.passed is True
 
 
 class TestPromotion:

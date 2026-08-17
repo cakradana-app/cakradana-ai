@@ -32,6 +32,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
+from cakradana.evaluation.fairness import FairnessReport
 from cakradana.training.registry import ARTIFACT_ROOT, Artifact, ArtifactError
 
 PROMOTION_FILE = "PROMOTION.json"
@@ -101,14 +102,15 @@ def evaluate_gates(
     shadow_period_completed: bool | None = None,
     golden_sets_passed: bool | None = None,
     precision_floor: float | None = None,
+    fairness: FairnessReport | None = None,
 ) -> GateReport:
     """Check an artifact against the promotion gates.
 
-    The three keyword arguments are facts this module cannot establish on its
-    own: whether a shadow period ran, whether the golden sets passed in CI, and
-    what the outgoing model's precision floor is. Left unset they are reported
-    as unevaluated, which blocks — because the alternative is a promotion
-    record that claims checks nobody performed.
+    The keyword arguments are facts this module cannot establish on its own:
+    whether a shadow period ran, whether the golden sets passed in CI, what the
+    outgoing model's precision floor is, and what the fairness assessment found.
+    Left unset they are reported as unevaluated, which blocks — because the
+    alternative is a promotion record that claims checks nobody performed.
     """
     manifest = artifact.manifest
     results: list[GateResult] = []
@@ -227,6 +229,31 @@ def evaluate_gates(
             "the incumbent has not been observed on live traffic",
         )
     )
+
+    if fairness is None:
+        results.append(
+            GateResult(
+                "G13",
+                "Fairness assessment",
+                None,
+                "no fairness assessment supplied; a model whose output tracks "
+                "party affiliation looks exactly like one that works, and "
+                "nothing else in this report would notice",
+            )
+        )
+    else:
+        concerns = fairness.concerns()
+        results.append(
+            GateResult(
+                "G13",
+                "Fairness assessment",
+                fairness.passed,
+                "; ".join(concerns)
+                if concerns
+                else "no disparity above tolerance on affiliation, district, "
+                "recipient type, or size band",
+            )
+        )
 
     card = "MODEL_CARD.md"
     results.append(

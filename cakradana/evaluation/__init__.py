@@ -1,5 +1,20 @@
 """Measuring the system in a way that is allowed to produce a bad answer."""
 
+from cakradana.evaluation.fairness import (
+    MAX_FALSE_FLAG_DISPARITY,
+    MIN_GROUP_REVIEWED,
+    REQUIRED_BREAKDOWNS,
+    AffiliationReport,
+    Cohort,
+    DifferentialReport,
+    FairnessReport,
+    GroupPerformance,
+    affiliation_assessment,
+    assess,
+    cramers_v,
+    differential_performance,
+    size_band,
+)
 from cakradana.evaluation.metrics import (
     BudgetMetrics,
     CalibrationReport,
@@ -31,12 +46,25 @@ from cakradana.evaluation.splits import (
 )
 
 __all__ = [
+    "MAX_FALSE_FLAG_DISPARITY",
+    "MIN_GROUP_REVIEWED",
+    "REQUIRED_BREAKDOWNS",
+    "AffiliationReport",
     "AuditDraw",
     "AuditFinding",
     "AuditSampler",
     "BudgetMetrics",
     "CalibrationReport",
+    "Cohort",
+    "DifferentialReport",
+    "FairnessReport",
+    "GroupPerformance",
     "LeakageError",
+    "affiliation_assessment",
+    "assess",
+    "cramers_v",
+    "differential_performance",
+    "size_band",
     "RecallEstimate",
     "SamplingBias",
     "estimate_recall",
