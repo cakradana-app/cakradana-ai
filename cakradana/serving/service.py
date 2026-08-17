@@ -20,6 +20,7 @@ from cakradana.calendar import ElectoralCalendar
 from cakradana.history import InMemoryDonationStore
 from cakradana.lanes.alerts import AlertIndex, GroupAlert, GroupAlertDetector
 from cakradana.lanes.classifier import ClassifierLane
+from cakradana.monitoring.health import ModelHealth, assess
 from cakradana.registers import RegisterSet
 from cakradana.rules import RuleSet, load_latest
 from cakradana.scoring.result import Lane, ScoringResult
@@ -185,6 +186,22 @@ class ScoringService:
     def latest_for(self, donation_id: str) -> ScoringResult | None:
         events = self._events.get(donation_id)
         return events[-1] if events else None
+
+    # -- health ----------------------------------------------------------
+
+    def model_health(
+        self, *, window_days: int = 30, review_budget: int | None = None
+    ) -> ModelHealth:
+        """What the model is doing in production.
+
+        Computed from the scoring events this service has produced, so it
+        describes the deployment rather than a training run. A lane that
+        quietly stopped loading and a rule that has returned indeterminate for
+        every donation since a register went stale both throw nothing and
+        appear in no request log; this is where they become visible.
+        """
+        events = [event for history in self._events.values() for event in history]
+        return assess(events, window_days=window_days, review_budget=review_budget)
 
     # -- introspection ---------------------------------------------------
 

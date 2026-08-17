@@ -224,6 +224,71 @@ def create_app(service: ScoringService | None = None) -> FastAPI:
             "previous": previous.model_dump(mode="json") if previous else None,
         }
 
+    @app.get(f"{API_PREFIX}/model-health")
+    def model_health(
+        window_days: int = 30,
+        review_budget: int | None = None,
+        svc: ScoringService = Depends(current_service),
+        _: None = Depends(require_token),
+    ) -> dict:
+        """What the model is doing in production.
+
+        The failures worth watching for here produce no errors: a lane that
+        stopped loading, a rule returning indeterminate for every donation
+        since a register went stale, an alert volume drifting past what the
+        team can review. None of them appear in a request log.
+
+        Recall is reported as unavailable with the reason. It needs a reviewed
+        random sample of unflagged donations, which is an operational process
+        and not something scoring events can be made to yield.
+        """
+        health = svc.model_health(window_days=window_days, review_budget=review_budget)
+        return {
+            "scored": health.scored,
+            "window_days": health.window_days,
+            "versions": health.versions,
+            "lanes": [
+                {
+                    "lane": lane.lane,
+                    "ran": lane.ran,
+                    "did_not_run": lane.did_not_run,
+                    "availability": lane.availability,
+                    # Counted per distinct reason rather than summed: "no
+                    # trained model is loaded" and "timed out" are different
+                    # problems, and one availability figure hides which.
+                    "reasons": lane.reasons,
+                    "mean_contribution": lane.mean_contribution,
+                }
+                for lane in health.lanes
+            ],
+            "bands": health.bands,
+            "rule_coverage": [
+                {
+                    "rule_id": rule_id,
+                    "evaluated": evaluated,
+                    "indeterminate": indeterminate,
+                    "indeterminate_rate": (
+                        indeterminate / (evaluated + indeterminate)
+                        if evaluated + indeterminate
+                        else 0.0
+                    ),
+                }
+                for rule_id, evaluated, indeterminate in health.rule_coverage
+            ],
+            "alert_volume": {
+                "flagged": health.alert_volume.flagged,
+                "budget": health.alert_volume.budget,
+                "over_budget": health.alert_volume.over_budget,
+                "detail": health.alert_volume.describe(),
+            },
+            "degraded_share": health.degraded_share,
+            "recall": health.recall,
+            "recall_unavailable_reason": health.recall_unavailable_reason,
+            # Ordered so a reader starts with what is actually wrong instead of
+            # inferring it from a wall of figures.
+            "concerns": list(health.concerns()),
+        }
+
     @app.post(f"{API_PREFIX}/alerts/detect")
     def detect_alerts(
         svc: ScoringService = Depends(current_service),
