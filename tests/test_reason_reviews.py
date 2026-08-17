@@ -14,7 +14,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
-from cakradana.scoring.catalogue import ReviewStatus, codes
+from cakradana.scoring.catalogue import codes
+from cakradana.scoring.result import ReviewStatus
 from cakradana.scoring.review import (
     REVIEW_FILE,
     ReviewDecision,

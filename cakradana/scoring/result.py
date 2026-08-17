@@ -52,6 +52,31 @@ class Band(str, Enum):
         return str(self.value)
 
 
+class ReviewStatus(str, Enum):
+    """Whether an analyst has read a reason's wording, in three states.
+
+    ``UNREVIEWED`` is not a milder ``VALIDATED``. It says nobody has looked,
+    which is the state every code in this system is in, and it must never be
+    reported as acceptable — the point of separating it from ``REJECTED`` is
+    that the two describe different failures and neither is a pass.
+
+    It rides on the reason itself rather than sitting in an internal object,
+    because the sentence and the question of whether anybody vetted it are read
+    by the same person at the same moment.
+    """
+
+    VALIDATED = "validated"
+    REJECTED = "rejected"
+    UNREVIEWED = "unreviewed"
+
+    @property
+    def is_acceptable(self) -> bool:
+        return self is ReviewStatus.VALIDATED
+
+    def __str__(self) -> str:  # pragma: no cover - trivial
+        return str(self.value)
+
+
 class Reason(BaseModel):
     """Why a score is what it is, in language an analyst can act on.
 
@@ -66,6 +91,11 @@ class Reason(BaseModel):
     lane: Lane
     weight: float = Field(ge=0.0, le=1.0)
     statement: str
+    #: Whether an analyst has read this wording. Defaults to unreviewed, so a
+    #: reason built anywhere and never stamped reads as unvetted rather than as
+    #: accepted. The safe direction is the one that cannot manufacture a review
+    #: nobody performed.
+    wording_review: ReviewStatus = ReviewStatus.UNREVIEWED
     #: What the same quantity looks like normally. A number with no reference
     #: point is not actionable: "23 senders" means nothing until the reader
     #: knows the usual figure is three.
@@ -108,6 +138,14 @@ class BehaviouralScore(BaseModel):
     degraded: bool = False
     #: The highest score obtainable given the lanes that were available.
     attainable_max: int = 100
+    #: Codes in this result whose wording no analyst has read. Carried at the
+    #: top level as well as on each reason, so a reader does not have to
+    #: inspect every sentence to learn that some of them are unvetted.
+    unreviewed_wording: tuple[str, ...] = ()
+    #: Codes an analyst read and found misleading, and which are still being
+    #: emitted. Kept apart from the unreviewed ones because they are a
+    #: different problem: somebody looked, and said no.
+    rejected_wording: tuple[str, ...] = ()
 
 
 class Versions(BaseModel):

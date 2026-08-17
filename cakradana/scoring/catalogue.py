@@ -28,33 +28,11 @@ the person the alert is about.
 from __future__ import annotations
 
 import re
-from enum import Enum
 from functools import lru_cache
 
 from pydantic import BaseModel, ConfigDict
 
 from cakradana.scoring.result import Lane
-
-
-class ReviewStatus(str, Enum):
-    """Whether an analyst has read a code's wording, in three states.
-
-    ``UNREVIEWED`` is not a milder ``VALIDATED``. It says nobody has looked,
-    which is the state every code ships in, and it must never be reported as
-    acceptable — the whole point of separating it from ``REJECTED`` is that the
-    two describe different failures and neither is a pass.
-    """
-
-    VALIDATED = "validated"
-    REJECTED = "rejected"
-    UNREVIEWED = "unreviewed"
-
-    @property
-    def is_acceptable(self) -> bool:
-        return self is ReviewStatus.VALIDATED
-
-    def __str__(self) -> str:  # pragma: no cover - trivial
-        return str(self.value)
 
 
 class ReasonCode(BaseModel):

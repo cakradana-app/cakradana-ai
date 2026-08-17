@@ -400,3 +400,40 @@ class TestIntrospection:
 
     def test_explaining_an_unknown_donation_is_a_not_found(self, client):
         assert client.get("/v1/explain/nope", headers=AUTH).status_code == 404
+
+
+class TestWordingReviewIsVisible:
+    """A reason nobody vetted must not read like one an analyst accepted.
+
+    The case bundle a reviewer works from is built out of this response, and
+    the response is the only place the distinction can reach them.
+    """
+
+    def test_every_reason_says_whether_anybody_read_its_wording(self, client):
+        body = client.post(
+            "/v1/score", headers=AUTH, json={"request_id": "r", "donation": donation()}
+        ).json()
+        reasons = body["result"]["behavioural"]["reasons"]
+        assert reasons
+        assert all(r["wording_review"] == "unreviewed" for r in reasons)
+
+    def test_the_response_summarises_what_is_unreviewed(self, client):
+        body = client.post(
+            "/v1/score", headers=AUTH, json={"request_id": "r", "donation": donation()}
+        ).json()
+        behavioural = body["result"]["behavioural"]
+        assert set(behavioural["unreviewed_wording"]) == {
+            r["code"] for r in behavioural["reasons"]
+        }
+        assert behavioural["rejected_wording"] == []
+
+    def test_the_state_reaches_the_lane_breakdown_too(self, client):
+        body = client.post(
+            "/v1/score", headers=AUTH, json={"request_id": "r", "donation": donation()}
+        ).json()
+        within = {
+            reason["wording_review"]
+            for lane in body["result"]["behavioural"]["lanes"]
+            for reason in lane["reasons"]
+        }
+        assert within <= {"unreviewed"}

@@ -28,7 +28,8 @@ from typing import Iterable, Sequence
 import yaml
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from cakradana.scoring.catalogue import ReviewStatus, codes
+from cakradana.scoring.catalogue import codes
+from cakradana.scoring.result import ReviewStatus
 
 #: Reviews live beside the wording they are about, so that a change to a
 #: statement and the review of that statement land in the same history and a

@@ -15,6 +15,7 @@ from cakradana.scoring.result import (
     Lane,
     LaneResult,
     Reason,
+    ReviewStatus,
     ScoringResult,
     Versions,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "LaneResult",
     "MissingReasons",
     "Reason",
+    "ReviewStatus",
     "ScoreComposer",
     "ScoringResult",
     "Versions",

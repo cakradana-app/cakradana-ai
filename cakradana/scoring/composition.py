@@ -27,9 +27,11 @@ from cakradana.scoring.result import (
     Lane,
     LaneResult,
     Reason,
+    ReviewStatus,
     ScoringResult,
     Versions,
 )
+from cakradana.scoring.review import default_statuses
 
 #: Share of the behavioural score each lane may contribute. Ordered by how much
 #: an analyst can rely on the evidence behind it, so the exploratory lanes
@@ -77,9 +79,14 @@ class ScoreComposer:
         *,
         ceilings: dict[Lane, int] | None = None,
         require_reasons: bool = True,
+        wording_statuses: dict[str, ReviewStatus] | None = None,
     ) -> None:
         self.ceilings = dict(ceilings or LANE_CEILINGS)
         self.require_reasons = require_reasons
+        #: Review state per reason code, read from the shipped ledger unless a
+        #: caller supplies its own. A code the ledger says nothing about reads
+        #: unreviewed, which is what it is.
+        self.wording_statuses = wording_statuses
 
     def compose(
         self,
@@ -109,13 +116,20 @@ class ScoreComposer:
         if not lanes:
             return None
 
+        statuses = (
+            self.wording_statuses
+            if self.wording_statuses is not None
+            else default_statuses()
+        )
+        lanes = tuple(_reviewed(lane, statuses) for lane in lanes)
+
         score = sum(lane.contribution for lane in lanes if lane.available)
         attainable = sum(
             self.ceilings.get(lane.lane, 0) for lane in lanes if lane.available
         )
         degraded = any(not lane.available for lane in lanes)
 
-        reasons = self._ordered_reasons(lanes)
+        reasons = self._ordered_reasons(lanes, statuses)
         if self.require_reasons and score > 0 and not reasons:
             raise MissingReasons(
                 "a behavioural score was produced with no reasons; the score is "
@@ -135,9 +149,13 @@ class ScoreComposer:
             reasons=reasons,
             degraded=degraded,
             attainable_max=attainable,
+            unreviewed_wording=_codes_at(reasons, ReviewStatus.UNREVIEWED),
+            rejected_wording=_codes_at(reasons, ReviewStatus.REJECTED),
         )
 
-    def _ordered_reasons(self, lanes: tuple[LaneResult, ...]) -> tuple[Reason, ...]:
+    def _ordered_reasons(
+        self, lanes: tuple[LaneResult, ...], statuses: dict[str, ReviewStatus]
+    ) -> tuple[Reason, ...]:
         collected: list[Reason] = []
         for lane in lanes:
             if lane.available:
@@ -155,10 +173,45 @@ class ScoreComposer:
                             f"The {lane.lane} lane did not run: "
                             f"{lane.unavailable_reason}."
                         ),
+                        wording_review=statuses.get(
+                            "LANE_UNAVAILABLE", ReviewStatus.UNREVIEWED
+                        ),
                     )
                 )
         collected.sort(key=lambda r: r.weight, reverse=True)
         return tuple(collected)
+
+
+def _reviewed(
+    lane: LaneResult, statuses: dict[str, ReviewStatus]
+) -> LaneResult:
+    """Stamp each of a lane's reasons with whether anybody vetted its wording.
+
+    Done here rather than in the lanes so that there is one place a reason can
+    acquire a review state, and so that a lane cannot claim one for itself. A
+    code the ledger does not mention keeps the unreviewed default, which is
+    also what an uncatalogued code gets: nobody has read it either.
+    """
+    if not lane.reasons:
+        return lane
+    return lane.model_copy(
+        update={
+            "reasons": tuple(
+                reason.model_copy(
+                    update={
+                        "wording_review": statuses.get(
+                            reason.code, ReviewStatus.UNREVIEWED
+                        )
+                    }
+                )
+                for reason in lane.reasons
+            )
+        }
+    )
+
+
+def _codes_at(reasons: tuple[Reason, ...], status: ReviewStatus) -> tuple[str, ...]:
+    return tuple(sorted({r.code for r in reasons if r.wording_review is status}))
 
 
 def unavailable(lane: Lane, reason: str) -> LaneResult:

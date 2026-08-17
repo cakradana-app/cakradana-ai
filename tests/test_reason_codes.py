@@ -35,8 +35,11 @@ from cakradana.scoring.catalogue import (
     entry_for,
     wording_defects,
 )
-from cakradana.scoring.result import Lane
+from cakradana.scoring.composition import ScoreComposer
+from cakradana.scoring.result import Lane, Reason, ReviewStatus
+from cakradana.scoring.review import default_statuses
 from cakradana.scoring.scorer import Scorer
+from tests.conftest import make_donation
 
 PACKAGE = Path(cakradana.__file__).resolve().parent
 
@@ -117,6 +120,32 @@ def scored():
         for reason in result.behavioural.reasons:
             emitted.append((reason.code, reason.lane, reason.statement))
     return tuple(emitted)
+
+
+def _compose(statuses: dict[str, ReviewStatus]):
+    """Score one donation with an explicit review state per code.
+
+    Three lanes are not configured, so the result always carries the composer's
+    own reason for their absence — the one code every result contains, and the
+    one this can assert on without depending on a detection firing.
+    """
+    donation = make_donation()
+    store = InMemoryDonationStore([donation])
+    scorer = Scorer(
+        load_latest(),
+        require_verified_citations=False,
+        composer=ScoreComposer(wording_statuses=statuses),
+    )
+    return scorer.score(donation, store.knowable_at(donation.occurred_at))
+
+
+def _all(status: ReviewStatus) -> dict[str, ReviewStatus]:
+    return {code: status for code in codes()}
+
+
+@pytest.fixture
+def composed():
+    return _compose({})
 
 
 class TestTheCatalogueEnumeratesEverything:
@@ -256,3 +285,74 @@ def _entry(statement: str) -> ReasonCode:
         observation="an example",
         statements=(statement,),
     )
+
+
+class TestTheResultSaysWhetherAnybodyReadIt:
+    """An unreviewed wording must not render the same as an accepted one.
+
+    An analyst reading a case bundle has no other way to tell that the sentence
+    in front of them has never been vetted, and a system that reads the same
+    either way spends the reviewing they did do on the codes they did not.
+    """
+
+    def test_a_reason_built_anywhere_defaults_to_unreviewed(self):
+        reason = Reason(
+            code="FAN_IN_BURST", lane=Lane.GRAPH, weight=0.5, statement="x"
+        )
+        assert reason.wording_review is ReviewStatus.UNREVIEWED
+        assert not reason.wording_review.is_acceptable
+
+    def test_every_reason_in_a_scored_result_carries_a_review_state(self, composed):
+        result, _ = composed
+        assert result.behavioural.reasons
+        assert all(
+            isinstance(r.wording_review, ReviewStatus)
+            for r in result.behavioural.reasons
+        )
+
+    def test_the_state_travels_into_the_serialised_result(self, composed):
+        result, _ = composed
+        payload = result.model_dump(mode="json")["behavioural"]
+        assert {r["wording_review"] for r in payload["reasons"]} == {"unreviewed"}
+        assert set(payload["unreviewed_wording"]) == {
+            r["code"] for r in payload["reasons"]
+        }
+
+    def test_an_accepted_wording_does_not_render_as_an_unreviewed_one(self):
+        unreviewed, _ = _compose({})
+        accepted, _ = _compose(_all(ReviewStatus.VALIDATED))
+        assert {r.wording_review for r in unreviewed.behavioural.reasons} == {
+            ReviewStatus.UNREVIEWED
+        }
+        assert {r.wording_review for r in accepted.behavioural.reasons} == {
+            ReviewStatus.VALIDATED
+        }
+        assert accepted.behavioural.unreviewed_wording == ()
+        assert unreviewed.model_dump() != accepted.model_dump()
+
+    def test_a_rejected_wording_is_reported_apart_from_an_unread_one(self):
+        """Somebody looked and said no. That is a different problem from
+        nobody having looked, and collapsing them loses the one that has an
+        owner."""
+        statuses = {**_all(ReviewStatus.VALIDATED)}
+        statuses["LANE_UNAVAILABLE"] = ReviewStatus.REJECTED
+        result, _ = _compose(statuses)
+        assert result.behavioural.rejected_wording == ("LANE_UNAVAILABLE",)
+        assert result.behavioural.unreviewed_wording == ()
+
+    def test_the_lane_and_the_summary_agree(self, composed):
+        result, _ = composed
+        within_lanes = {
+            r.wording_review
+            for lane in result.behavioural.lanes
+            for r in lane.reasons
+        }
+        assert within_lanes <= {ReviewStatus.UNREVIEWED}
+
+    def test_the_shipped_ledger_leaves_every_emitted_code_unreviewed(self, scored):
+        assert {code for code, _, _ in scored}
+        assert all(
+            default_statuses().get(code, ReviewStatus.UNREVIEWED)
+            is ReviewStatus.UNREVIEWED
+            for code, _, _ in scored
+        )
