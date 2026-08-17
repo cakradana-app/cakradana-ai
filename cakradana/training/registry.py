@@ -151,10 +151,29 @@ def versions(root: Path = ARTIFACT_ROOT) -> tuple[str, ...]:
 
 
 def latest(root: Path = ARTIFACT_ROOT) -> Artifact:
+    """The newest artifact on disk.
+
+    Newest, not live. Serving is loaded from `governance.promotion.current`,
+    which reads the version somebody approved; a directory sorting last is not
+    a decision anybody made. This exists for inspecting what training produced.
+    """
     available = versions(root)
     if not available:
         raise ArtifactError(f"no model versions published under {root}")
     return load(available[-1], root=root)
+
+
+def load_promoted(root: Path = ARTIFACT_ROOT) -> Artifact | None:
+    """The version approved for service, or None.
+
+    None rather than a fallback to the newest. A deployment with nothing
+    promoted should run the rules alone — which is a working system — instead
+    of quietly serving whatever was trained most recently.
+    """
+    from cakradana.governance.promotion import current
+
+    promotion = current(root)
+    return load(promotion.version, root=root) if promotion else None
 
 
 def remove(version: str, *, root: Path = ARTIFACT_ROOT) -> None:
