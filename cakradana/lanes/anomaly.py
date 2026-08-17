@@ -175,10 +175,25 @@ class AnomalyLane:
             code="UNUSUAL_COMBINATION",
             lane=Lane.ANOMALY,
             weight=round(intensity, 3),
+            # "Unlike the donations around it, without matching any known
+            # pattern" named no quantity, no comparison set and no threshold,
+            # so an analyst could not tell a near miss from an extreme and had
+            # nothing to disagree with.
+            #
+            # An isolation forest cannot say which quantities put a donation
+            # outside the range, and stating the raw outlier value instead
+            # would restate the score — which the catalogue's own wording check
+            # rejects, because a reason that repeats the number it is meant to
+            # explain explains nothing. So the sentence says what happened and
+            # then says what cannot be known, in the manner of LANE_UNAVAILABLE
+            # and HAS_UNRESOLVED_ENTITY: a contribution nobody can check is a
+            # limit of the evidence, and naming it is the useful thing to do
+            # with it.
             statement=(
-                "This donation's combination of amount, donor history, and "
-                "recipient pattern is unlike the donations around it, without "
-                "matching any known pattern."
+                "The anomaly lane placed this donation outside the range it "
+                "was fitted to treat as ordinary. It does not identify which "
+                "quantities put it there, so nothing here can be checked "
+                "against the record."
             ),
             comparison=(
                 "Most donations sit well inside the range this lane treats as "

@@ -140,10 +140,25 @@ class ClassifierLane:
                     code="MODEL_SCORE",
                     lane=Lane.CLASSIFIER,
                     weight=min(probability, 1.0),
+                    # "Ranked above most others on its combination of donor
+                    # history, recipient pattern, and amount" described the
+                    # model rather than the donation: those three are the
+                    # inputs, and a position in an output distribution is not
+                    # something an analyst can check against the record or
+                    # quote into a case note.
+                    #
+                    # Restating the figure instead would fail the catalogue's
+                    # own wording check, and rightly: a reason that repeats the
+                    # score it is meant to explain explains nothing. What is
+                    # left, and what is true, is that this lane contributed and
+                    # nothing behind it can be checked — a limit of the
+                    # evidence, stated the way HAS_UNRESOLVED_ENTITY and
+                    # LANE_UNAVAILABLE state theirs.
                     statement=(
-                        "The model ranked this donation above most others on "
-                        "its combination of donor history, recipient pattern, "
-                        "and amount."
+                        "The classifier lane contributed to this donation's "
+                        "assessment, but none of the inputs it relied on most "
+                        "carries wording a reader can check, so nothing here "
+                        "can be checked against the record."
                     ),
                     evidence_ref=f"donation:{features.donation_id}",
                 )

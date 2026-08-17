@@ -106,9 +106,18 @@ class GraphLane:
                 f"{counterparties} distinct recipients within {span} days."
             )
         elif alert.kind is AlertKind.LAYERING_CHAIN:
+            # Three conclusions were packed into the previous sentence:
+            # "layering" is a term of art for a deliberate laundering stage,
+            # "chain" asserts the donations are connected rather than merely
+            # co-occurring, and "intermediate entities" assigns a role to
+            # parties who may simply have donated. An analyst reading the
+            # sequence may well conclude layering; the reason must not conclude
+            # it for them, and a party described as intermediate in a case note
+            # has been characterised by the system rather than by a person.
             statement = (
-                f"This donation is one leg of a chain of {donations} passing "
-                f"through {counterparties} intermediate entities."
+                f"This donation is one of {donations} that occurred in "
+                f"sequence between {counterparties} other parties within "
+                f"{span} days."
             )
         else:
             statement = (

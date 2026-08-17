@@ -136,12 +136,12 @@ _FIXED: tuple[ReasonCode, ...] = (
         lanes=(Lane.GRAPH,),
         source="group alert: layering chain",
         observation=(
-            "this donation is one leg of a chain passing through intermediate "
-            "parties"
+            "this donation is one of several that occurred in sequence between "
+            "the same parties inside one window"
         ),
         statements=(
-            "This donation is one leg of a chain of {donations} passing "
-            "through {counterparties} intermediate entities.",
+            "This donation is one of {donations} that occurred in sequence "
+            "between {counterparties} other parties within {span} days.",
         ),
     ),
     ReasonCode(
@@ -149,13 +149,14 @@ _FIXED: tuple[ReasonCode, ...] = (
         lanes=(Lane.ANOMALY,),
         source="anomaly detector",
         observation=(
-            "the donation sits outside the range the anomaly lane treats as "
-            "ordinary, matching no known pattern"
+            "the donation fell outside the range this lane was fitted to treat "
+            "as ordinary, with no attribution to any quantity"
         ),
         statements=(
-            "This donation's combination of amount, donor history, and "
-            "recipient pattern is unlike the donations around it, without "
-            "matching any known pattern.",
+            "The anomaly lane placed this donation outside the range it was "
+            "fitted to treat as ordinary. It does not identify which "
+            "quantities put it there, so nothing here can be checked against "
+            "the record.",
         ),
     ),
     ReasonCode(
@@ -177,12 +178,14 @@ _FIXED: tuple[ReasonCode, ...] = (
         lanes=(Lane.CLASSIFIER,),
         source="classifier, with no rankable input available",
         observation=(
-            "the classifier ranked the donation highly but named no input to "
-            "attribute it to"
+            "the classifier contributed, and none of the inputs it relied on "
+            "most carries wording a reader can check"
         ),
         statements=(
-            "The model ranked this donation above most others on its "
-            "combination of donor history, recipient pattern, and amount.",
+            "The classifier lane contributed to this donation's assessment, "
+            "but none of the inputs it relied on most carries wording a "
+            "reader can check, so nothing here can be checked against the "
+            "record.",
         ),
     ),
 )
@@ -284,8 +287,8 @@ _FEATURE_WORDING: dict[str, tuple[str, Render]] = {
         "rupiah",
     ),
     "std_donasi_sender": (
-        "The donor's earlier donations varied by {value} either side of that "
-        "average.",
+        "The donor's earlier donations varied by {value} either side of their "
+        "own average donation.",
         "rupiah",
     ),
     "jumlah_donasi_30hari_sender": (

@@ -185,10 +185,10 @@ class TestWhatIsShipped:
     def test_the_ledger_ships_with_the_code(self):
         assert REVIEW_FILE.is_file()
 
-    #: The five whose wording a reviewer found misleading. Named rather than
-    #: counted, so that removing one from the ledger fails here instead of
+    #: The five a reviewer found misleading and that have since been rewritten.
+    #: Named rather than counted, so that dropping one fails here instead of
     #: quietly reducing the number of sentences this system is answerable for.
-    REJECTED = (
+    REWORDED = (
         'LAYERING_CHAIN',
         'MODEL_SCORE',
         'PASS_THROUGH',
@@ -197,25 +197,29 @@ class TestWhatIsShipped:
     )
 
     def test_the_shipped_ledger_is_reviewed_but_not_complete(self):
-        """The honest state of this system.
+        """The honest state of this system, and how it got here.
 
-        It was every code unreviewed; it is now every code read, with five
-        wordings recorded as misleading and still emitted. Both are states the
-        gate refuses, and for the same reason: a sentence an analyst acts on
-        that nobody can stand behind. The difference is that the remedy is now
-        known — rewrite those five — rather than unknown.
+        It was every code unreviewed. Every one was then read: forty-six
+        accepted, five recorded as misleading. Those five have since been
+        rewritten, which returns them to unreviewed — the reviewer accepted a
+        sentence rather than a code, and carrying a decision across to wording
+        nobody saw would report a review that never happened.
+
+        So the gate has blocked throughout, for three different reasons in
+        sequence, and that is the property worth pinning: it does not open
+        because decisions were recorded, or because objections were addressed,
+        but only when the current wording has been read and accepted.
 
         Asserted rather than left implicit so that changing what this system
-        has reviewed has to be a deliberate change to this test as well as to
-        the ledger.
+        has reviewed has to be a deliberate change to this test as well.
         """
         coverage = default_ledger().coverage()
         assert coverage.total == len(stateable_codes())
-        assert tuple(sorted(coverage.rejected)) == self.REJECTED
-        assert len(coverage.validated) == coverage.total - len(self.REJECTED)
-        assert coverage.unreviewed == ()
-        # Still false, and this is the point. Reviewing a sentence and finding
-        # it misleading does not make it fit to ship; it records why it is not.
+        assert tuple(sorted(coverage.unreviewed)) == self.REWORDED
+        assert len(coverage.validated) == coverage.total - len(self.REWORDED)
+        # Nothing stands rejected: each objection was answered by rewriting the
+        # sentence, and the rewrite is what awaits a reading.
+        assert coverage.rejected == ()
         assert coverage.complete is False
 
     def test_a_code_carrying_no_wording_is_not_counted_as_outstanding(self):

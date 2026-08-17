@@ -392,20 +392,23 @@ class TestReasonWordingGate:
     def test_the_shipped_state_of_this_system_blocks(self):
         """Asserted against the real ledger, not a fixture.
 
-        It blocked when nothing had been read. It blocks now that everything
-        has, because five wordings were found misleading and are still
-        emitted — which is the harder case and the one worth pinning: a gate
-        that counted reviews rather than weighing them would have opened the
-        moment the last decision was recorded, whatever those decisions said.
+        It blocked when nothing had been read. It blocked when everything had
+        been read and five wordings were found misleading. It blocks now that
+        those five have been rewritten and their rewrites await a reading.
 
-        The rejected codes are named in the detail so that whoever reads a
-        blocked gate learns which five sentences to rewrite.
+        Three different reasons, one verdict, and that is the point: a gate
+        that counted decisions rather than weighing them would have opened the
+        moment the last one was recorded, whatever those decisions said, and
+        would have opened again the moment the objections were addressed —
+        without anybody having read a single amended sentence.
+
+        The outstanding codes are named in the detail so that whoever reads a
+        blocked gate learns which sentences are waiting on them.
         """
-        detail = self.gate(evaluate_gates(artifact())).detail
-        assert self.gate(evaluate_gates(artifact())).passed is False
-        assert "misleading and still emitted" in detail
+        gate = self.gate(evaluate_gates(artifact()))
+        assert gate.passed is False
         for code in ("MODEL_SCORE", "UNUSUAL_COMBINATION", "PASS_THROUGH"):
-            assert code in detail
+            assert code in gate.detail
 
     def test_a_wording_found_misleading_blocks_even_if_everything_else_is_read(self):
         ledger = ReviewLedger(

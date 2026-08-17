@@ -402,7 +402,7 @@ rules:
       result: BEHAVIOURAL_SIGNAL
       label_weight: 0.6
       reason_template: >
-        {sender} received {inflow_total} and forwarded {outflow} within
+        {sender} received {inflow_total} and then donated {outflow} within
         {lag_days} days, a ratio of {ratio}.
     calibration:
       status: PROVISIONAL

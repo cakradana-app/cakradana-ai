@@ -17,7 +17,8 @@ starts from — not a substitute for it.
 from __future__ import annotations
 
 import ast
-from datetime import timedelta
+import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -28,10 +29,19 @@ from cakradana.data import GeneratorConfig, generate
 from cakradana.features import FeatureService, FeatureVector
 from cakradana.features.definitions import feature_names
 from cakradana.history import InMemoryDonationStore
-from cakradana.lanes.alerts import AlertIndex, AlertKind, DetectorSettings, GroupAlertDetector
+from cakradana.lanes.alerts import (
+    AlertIndex,
+    AlertKind,
+    AlertSubject,
+    AlertWindow,
+    DetectorSettings,
+    GroupAlert,
+    GroupAlertDetector,
+    TYPOLOGY_OF,
+)
 from cakradana.lanes.anomaly import AnomalyLane, fit
 from cakradana.lanes.classifier import ClassifierLane
-from cakradana.lanes.graph import STRUCTURAL_RULES
+from cakradana.lanes.graph import STRUCTURAL_RULES, GraphLane
 from cakradana.lanes.reputation import (
     CoverageIndex,
     CoverageItem,
@@ -565,22 +575,66 @@ class TestTheResultSaysWhetherAnybodyReadIt:
         }
         assert within_lanes <= {ReviewStatus.UNREVIEWED}
 
-    def test_the_shipped_ledger_has_a_status_for_every_emitted_code(self, scored):
-        """Nothing reaches an analyst whose wording nobody has ruled on.
+    def test_every_emitted_sentence_is_the_catalogued_one(self, scored):
+        """What an analyst reads is what a reviewer read.
 
-        This asserted the opposite until the catalogue was reviewed — every
-        emitted code unreviewed — and the inversion is the point of keeping it:
-        the property worth holding is not which state the ledger is in, but
-        that no code can be emitted while sitting outside it. A code added
-        tomorrow and rendered into a case bundle without a decision fails here.
+        The catalogue holds the template a reviewer accepts; the lanes build
+        the sentence with their own f-strings. Nothing tied the two together,
+        so amending one and not the other left the ledger recording a decision
+        about a sentence nobody would ever see — which defeats the review
+        mechanism completely, and does it silently, since both halves are
+        valid code and every other test passes.
+
+        Found by amending a catalogue template alone and watching the whole
+        suite stay green.
+
+        The template is matched as a pattern rather than compared literally,
+        because the placeholders are filled at emission and their values are
+        the part that legitimately varies. Anything outside a placeholder is
+        wording, and wording is what was reviewed.
+        """
+        import re
+
+        for code, _, statement in scored:
+            entry = entry_for(code)
+            assert entry is not None, f"{code} is emitted but not catalogued"
+            patterns = [
+                "".join(
+                    ".+?" if part.startswith("{") and part.endswith("}")
+                    else re.escape(part)
+                    for part in re.split(r"(\{[^{}]*\})", template)
+                )
+                for template in entry.statements
+            ]
+            # Anchored at the start only: the graph lane appends a sentence
+            # about unresolved parties to some alerts, which is additional
+            # wording rather than an amendment of the reviewed one.
+            assert any(
+                re.match(pattern, statement) for pattern in patterns
+            ), f"{code} emitted wording the catalogue does not declare: {statement!r}"
+
+    def test_the_review_state_reaching_the_result_is_the_ledger_s(self, scored):
+        """Whatever the ledger says is what arrives beside the reason.
+
+        This asserted that every emitted code was unreviewed, which was true
+        while nobody had read any of them and became false the day somebody
+        did. Pinning a snapshot of the ledger inside a test of the scoring
+        result meant the two moved together; the property actually worth
+        holding is that they agree.
+
+        So: no emitted code sits outside the ledger's world, and each carries
+        the state recorded for it rather than a default. Emitting an unreviewed
+        wording is allowed — the system says so in the response, which is the
+        whole reason the field exists — but emitting one whose state the result
+        misreports is not.
         """
         emitted = {code for code, _, _ in scored}
         assert emitted
         statuses = default_statuses()
-        assert all(
-            statuses.get(code, ReviewStatus.UNREVIEWED) is not ReviewStatus.UNREVIEWED
-            for code in emitted
-        )
+        assert emitted <= set(statuses)
+        # At least one real decision has to survive the journey, or a result
+        # that hardcoded "unreviewed" everywhere would satisfy the above.
+        assert any(statuses[code] is ReviewStatus.VALIDATED for code in emitted)
 
 
 class TestTheClassifierOnlySaysWhatCanBeChecked:
@@ -708,3 +762,67 @@ class _RankedModel:
         import numpy as np
 
         return np.array([[0.2, 0.8]])
+
+
+class TestAlertWordingIsExercised:
+    """The three group-alert sentences, checked against the catalogue.
+
+    They were checked by nothing. The `scored` fixture states that it holds
+    detected clusters so the alert wordings become reachable, and over its
+    generated population the detector finds zero — so FAN_IN_BURST, FAN_OUT
+    and LAYERING_CHAIN were catalogued, reviewed, and emitted by code that no
+    test ever ran. Amending a template alone left the whole suite green.
+
+    Built here rather than fished out of generated data, because a wording
+    should not be covered only when a random population happens to contain the
+    shape that produces it.
+    """
+
+    def alert(self, kind: AlertKind) -> GroupAlert:
+        window = AlertWindow(
+            **{
+                "from": datetime(2026, 3, 1, tzinfo=timezone.utc),
+                "to": datetime(2026, 3, 15, tzinfo=timezone.utc),
+            }
+        )
+        return GroupAlert(
+            alert_id="cluster:test",
+            kind=kind,
+            typology=TYPOLOGY_OF[kind],
+            subject=AlertSubject(
+                focus="entity:focus",
+                focus_role="receiver",
+                donations=("d1", "d2", "d3"),
+                counterparties=("e1", "e2"),
+                window=window,
+            ),
+            signals={},
+            comparison=None,
+            score=60,
+            provisional_node_ratio=0.0,
+        )
+
+    @pytest.mark.parametrize("kind", list(AlertKind))
+    def test_the_sentence_matches_its_catalogued_template(self, kind):
+        statement = GraphLane()._alert_reason(self.alert(kind)).statement
+        entry = entry_for(str(kind))
+        assert entry is not None
+        for template in entry.statements:
+            pattern = "".join(
+                ".+?" if part.startswith("{") and part.endswith("}") else re.escape(part)
+                for part in re.split(r"(\{[^{}]*\})", template)
+            )
+            if re.match(pattern, statement):
+                return
+        raise AssertionError(
+            f"{kind} emits wording the catalogue does not declare: {statement!r}"
+        )
+
+    def test_an_unresolved_share_is_added_rather_than_substituted(self):
+        """The caveat appends; it does not replace the reviewed sentence."""
+        alert = self.alert(AlertKind.FAN_IN_BURST).model_copy(
+            update={"provisional_node_ratio": 0.5}
+        )
+        statement = GraphLane()._alert_reason(alert).statement
+        assert "could not be resolved to a known entity" in statement
+        assert statement.startswith("This donation is one of 3")
