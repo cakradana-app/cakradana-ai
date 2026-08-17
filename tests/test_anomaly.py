@@ -99,7 +99,12 @@ class TestLaneBehaviour:
                 assert not outcome.available
                 assert "legal finding" in outcome.unavailable_reason
                 return
-        pytest.skip("no legal findings in this dataset to exercise the skip")
+        pytest.fail(
+            "the fixture produced no donation with a legal finding, so this "
+            "test never reached its assertion. A test that passes by not "
+            "running is worse than a missing one: it reports coverage it does "
+            "not provide."
+        )
 
     def test_a_surfaced_donation_carries_a_reason(self, fitted):
         dataset, store, engine, features, vectors, model = fitted

@@ -172,6 +172,23 @@ class TestRetrainingDecision:
         assert not decision.should_retrain
         assert any("mostly reproduces" in b for b in decision.blockers)
 
+    def test_absent_adjudications_are_reported_without_blocking(self):
+        """A corpus of analyst judgements is usable on its own, so this is not
+        a blocker. But a label set containing no adjudicated outcome was
+        assembled without any contested attribution ever being resolved, and
+        that reaches nobody if it lives in a comment."""
+        labels = [label(i, note="audit-sample") for i in range(MIN_HUMAN_LABELS + 50)]
+        decision = evaluate(labels, drift_detected=True)
+        assert decision.should_retrain
+        assert any("adjudicated dispute outcomes" in n for n in decision.notes)
+        assert "worth knowing" in decision.summary()
+
+    def test_a_note_is_not_a_blocker(self):
+        labels = [label(i, note="audit-sample") for i in range(MIN_HUMAN_LABELS + 50)]
+        decision = evaluate(labels, drift_detected=True)
+        assert decision.notes
+        assert not decision.blockers
+
     def test_a_pipeline_fault_blocks_a_retrain(self):
         labels = [label(i, note="audit-sample") for i in range(MIN_HUMAN_LABELS + 50)]
         decision = evaluate(labels, drift_detected=True, pipeline_faults=["amount"])

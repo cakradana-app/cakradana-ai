@@ -52,6 +52,9 @@ class Trigger:
 class RetrainingDecision:
     triggers: tuple[Trigger, ...]
     blockers: tuple[str, ...]
+    #: Observations that do not block but should reach whoever decides. A
+    #: caveat held only in a comment reaches nobody at the moment it matters.
+    notes: tuple[str, ...] = ()
 
     @property
     def any_trigger_fired(self) -> bool:
@@ -70,6 +73,10 @@ class RetrainingDecision:
 
     def summary(self) -> str:
         lines = [t.describe() for t in self.triggers]
+        if self.notes:
+            lines.append("")
+            lines.append("worth knowing:")
+            lines.extend(f"  - {n}" for n in self.notes)
         if self.blockers:
             lines.append("")
             lines.append("blocked:")
@@ -176,10 +183,19 @@ def evaluate(
             + "); retraining now would fit the fault rather than the data"
         )
 
+    notes: list[str] = []
     if not any(l.source is LabelSource.DISPUTE_OUTCOME for l in labels) and len(human) >= MIN_HUMAN_LABELS:
-        # Not a blocker. Adjudicated outcomes are the strongest evidence
-        # available and their complete absence is worth noticing, but a corpus
-        # of analyst judgements is still a usable one.
-        pass
+        # Not a blocker: a corpus of analyst judgements is usable on its own.
+        # But adjudicated outcomes are the strongest evidence this system can
+        # hold, and a label set containing none of them was assembled without
+        # any contested attribution ever being resolved — which is worth
+        # knowing before fitting a model to it, and reaches nobody if it lives
+        # in a comment.
+        notes.append(
+            "no adjudicated dispute outcomes among the human labels; the "
+            "strongest evidence available is absent from the training set"
+        )
 
-    return RetrainingDecision(triggers=triggers, blockers=tuple(blockers))
+    return RetrainingDecision(
+        triggers=triggers, blockers=tuple(blockers), notes=tuple(notes)
+    )
