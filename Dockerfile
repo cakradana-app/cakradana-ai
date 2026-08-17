@@ -1,8 +1,14 @@
 FROM python:3.10-slim
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# The lock rather than the manifest, and hashes required rather than optional.
+# The manifest fixes nine distributions; the install is fifty-four, and the
+# thirty-odd it does not name were resolved freshly on every build — under a
+# package whose stated reason for pinning is that a scoring result must be
+# reproducible. `--require-hashes` also refuses anything the index serves that
+# differs by a byte from what was resolved, which a version pin does not notice.
+COPY requirements.lock .
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 
 COPY pyproject.toml .
 COPY cakradana/ cakradana/
