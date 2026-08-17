@@ -17,6 +17,7 @@ from __future__ import annotations
 from cakradana.features import FeatureVector
 from cakradana.rules.context import RuleContext
 from cakradana.rules.engine import RuleEvaluation
+from cakradana.scoring.catalogue import ReasonCode, entry_for
 from cakradana.scoring.composition import contribution_from, unavailable
 from cakradana.scoring.result import Lane, LaneResult, Reason
 from cakradana.training.registry import Artifact
@@ -103,18 +104,33 @@ class ClassifierLane:
         importance is a property of the model, not of this donation, so the
         statement names what was observed rather than claiming the number
         caused the score.
+
+        Two things follow from that and are enforced here rather than trusted.
+        The wording comes from the reason-code catalogue, so what an analyst
+        reads is the sentence that was reviewed. And a feature the catalogue
+        says has no form a reader could check is passed over entirely, however
+        much weight the model gave it — the ranking then continues down, so
+        skipping one costs an explanation rather than suppressing it. A model
+        input that cannot be stated is not made sayable by being important.
         """
         reasons: list[Reason] = []
-        for name in self._importances[:TOP_REASONS]:
+        for name in self._importances:
+            if len(reasons) == TOP_REASONS:
+                break
+            entry = entry_for(name.upper())
+            if entry is None or not entry.analyst_facing:
+                continue
             value = features.values.get(name)
-            if value is None:
+            statement = _state(entry, value)
+            if statement is None:
                 continue
             reasons.append(
                 Reason(
-                    code=name.upper(),
+                    code=entry.code,
                     lane=Lane.CLASSIFIER,
                     weight=min(probability, 1.0),
-                    statement=f"{_phrase(name)}: {_render(value)}.",
+                    statement=statement,
+                    comparison=entry.comparison,
                     evidence_ref=f"donation:{features.donation_id}",
                 )
             )
@@ -135,11 +151,28 @@ class ClassifierLane:
         return tuple(reasons)
 
 
-def _phrase(name: str) -> str:
-    return name.replace("_", " ")
+def _state(entry: ReasonCode, value: object) -> str | None:
+    """Fill a catalogued sentence, or decline to say anything.
+
+    None where there is nothing to say: a feature the vector never computed, and
+    a boolean that came back false. Neither is an observation. Printing "false"
+    beside a label would invite it to be read as one, and a null filled with
+    anything at all would report a value nobody measured.
+    """
+    if entry.render == "when_true":
+        return entry.statements[0] if value else None
+    if value is None:
+        return None
+    return entry.statements[0].format(value=_render(value, entry.render))
 
 
-def _render(value: object) -> str:
+def _render(value: object, kind: str) -> str:
+    if kind == "rupiah" and isinstance(value, (int, float)):
+        # Grouped with full stops, as rupiah is written in Indonesian. A figure
+        # read under the other convention is wrong by three orders of magnitude.
+        return f"Rp{int(value):,}".replace(",", ".")
+    if kind == "share" and isinstance(value, (int, float)):
+        return f"{value:.0%}"
     if isinstance(value, float):
         return f"{value:,.2f}"
     if isinstance(value, int):
