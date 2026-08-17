@@ -18,6 +18,7 @@ from typing import Iterable, Mapping, Sequence
 
 from cakradana.calendar import ElectoralCalendar
 from cakradana.history import InMemoryDonationStore
+from cakradana.lanes.alerts import AlertIndex, GroupAlert, GroupAlertDetector
 from cakradana.lanes.classifier import ClassifierLane
 from cakradana.registers import RegisterSet
 from cakradana.rules import RuleSet, load_latest
@@ -43,6 +44,7 @@ class ScoringService:
         registers: RegisterSet | None = None,
         artifact: Artifact | None = None,
         entities: Mapping[str, Entity] | None = None,
+        detector: GroupAlertDetector | None = None,
         require_verified_citations: bool = True,
     ) -> None:
         self.ruleset = ruleset or load_latest()
@@ -50,7 +52,9 @@ class ScoringService:
         self.entities: dict[str, Entity] = dict(entities or {})
         self.store = InMemoryDonationStore()
 
-        lanes = [GraphLaneAdapter()]
+        self.detector = detector or GroupAlertDetector()
+        self._graph = GraphLaneAdapter()
+        lanes = [self._graph]
         if artifact is not None:
             lanes.append(ClassifierLane(artifact))
 
@@ -66,6 +70,10 @@ class ScoringService:
         #: rather than replacing, so the history of what was said about a
         #: donation stays intact.
         self._events: dict[str, list[ScoringResult]] = {}
+        #: When structural detection last ran. Surfaced with the alerts,
+        #: because "detection found nothing" and "detection has not run" are
+        #: different claims and an empty list is not enough to tell them apart.
+        self.alerts_detected_at: datetime | None = None
 
     # -- readiness -------------------------------------------------------
 
@@ -142,6 +150,34 @@ class ScoringService:
             except Exception as error:  # noqa: BLE001 - reported per item
                 outcomes.append((payload, None, str(error)))
         return outcomes
+
+    # -- group alerts ----------------------------------------------------
+
+    def detect_group_alerts(
+        self, *, as_of: datetime | None = None
+    ) -> tuple[GroupAlert, ...]:
+        """Find structural patterns across the population.
+
+        Runs over everything knowable at `as_of` rather than per donation,
+        because a cluster is not a property of any of its members. The result
+        is adopted by the graph lane, so donations scored after this call carry
+        the cluster's evidence; ones scored before it keep what they were given
+        until they are explicitly rescored.
+        """
+        moment = as_of or self.store.latest_recorded_at
+        if moment is None:
+            self._graph.use(AlertIndex())
+            self.alerts_detected_at = None
+            return ()
+
+        alerts = self.detector.detect(self.store.knowable_at(moment), as_of=moment)
+        self._graph.use(AlertIndex(alerts))
+        self.alerts_detected_at = moment
+        return alerts
+
+    @property
+    def group_alerts(self) -> tuple[GroupAlert, ...]:
+        return tuple(self._graph.alerts)
 
     def history_for(self, donation_id: str) -> tuple[ScoringResult, ...]:
         return tuple(self._events.get(donation_id, ()))

@@ -8,6 +8,7 @@ when this lane happens to be imported.
 
 from __future__ import annotations
 
+from cakradana.lanes.alerts import AlertIndex, AlertKind, GroupAlert
 from cakradana.rules.context import RuleContext
 from cakradana.rules.engine import RuleEvaluation
 from cakradana.scoring.composition import contribution_from
@@ -34,9 +35,30 @@ TYPICAL_FAN_IN = 3
 
 
 class GraphLane:
-    """Turns structural rule signals into a scored contribution."""
+    """Turns structural rule signals and group alerts into a contribution.
+
+    Two sources feed it. The per-donation structural rules ask whether *this*
+    donation sits in a suspicious shape; the group alerts describe the shape
+    itself. A donation inside a detected cluster inherits the cluster's score,
+    because the evidence against it is the cluster — reasoning about it alone
+    is exactly the mistake group alerts exist to prevent.
+    """
 
     name = Lane.GRAPH
+
+    def __init__(self, alerts: AlertIndex | None = None) -> None:
+        self.alerts = alerts or AlertIndex()
+
+    def use(self, alerts: AlertIndex) -> None:
+        """Adopt a freshly detected set of clusters.
+
+        Detection runs over the whole population, not per donation, so a
+        cluster becomes visible only once enough of it has arrived. A donation
+        scored before its cluster existed keeps the score it was given; the
+        record of what changed is the rescoring event, not an edit to the old
+        one.
+        """
+        self.alerts = alerts
 
     def evaluate(self, evaluation: RuleEvaluation, ctx: RuleContext) -> LaneResult:
         fired = [
@@ -44,19 +66,71 @@ class GraphLane:
             for signal in evaluation.behavioural_signals
             if signal.rule_id in STRUCTURAL_RULES
         ]
-        if not fired:
+        covering = self.alerts.covering(ctx.donation.donation_id)
+        if not fired and not covering:
             return contribution_from(Lane.GRAPH, 0.0, ())
 
-        reasons = tuple(self._reason(signal, ctx) for signal in fired)
+        reasons = tuple(self._reason(signal, ctx) for signal in fired) + tuple(
+            self._alert_reason(alert) for alert in covering
+        )
+
         # Intensity rises with the number of independent structural findings
         # but saturates: three patterns firing together is materially more than
         # one, and six is not materially more than three.
-        intensity = min(len(fired) / 3.0, 1.0)
-        weighted = max(
-            (signal.label_weight or 0.5) for signal in fired
-        )
-        return contribution_from(
-            Lane.GRAPH, intensity * weighted / 0.6, reasons
+        from_rules = 0.0
+        if fired:
+            weighted = max((signal.label_weight or 0.5) for signal in fired)
+            from_rules = min(len(fired) / 3.0, 1.0) * weighted / 0.6
+
+        # Taken as the stronger of the two rather than their sum. A cluster
+        # detected by the group pass and by the per-donation rule is one
+        # observation seen twice, and adding it to itself would rank a
+        # doubly-detected pattern above a worse one detected once.
+        from_alerts = max((alert.score / 100 for alert in covering), default=0.0)
+        return contribution_from(Lane.GRAPH, max(from_rules, from_alerts), reasons)
+
+    def _alert_reason(self, alert: GroupAlert) -> Reason:
+        """States what the cluster is, and that the donation is part of it.
+
+        Phrased as a fact about a set of payments. The alert names no motive
+        and asserts nothing about the parties, because the same shape is
+        produced by a coordinated split and by a successful fundraising drive.
+        """
+        counterparties = len(alert.subject.counterparties)
+        donations = len(alert.subject.donations)
+        window = alert.subject.window
+        span = (window.to - window.from_).days
+        if alert.kind is AlertKind.FAN_OUT:
+            statement = (
+                f"This donation is one of {donations} from the same donor to "
+                f"{counterparties} distinct recipients within {span} days."
+            )
+        elif alert.kind is AlertKind.LAYERING_CHAIN:
+            statement = (
+                f"This donation is one leg of a chain of {donations} passing "
+                f"through {counterparties} intermediate entities."
+            )
+        else:
+            statement = (
+                f"This donation is one of {donations} reaching the same "
+                f"recipient from {counterparties} distinct donors within "
+                f"{span} days."
+            )
+        if alert.provisional_node_ratio > 0:
+            statement += (
+                f" {alert.provisional_node_ratio:.0%} of the group rests on "
+                f"parties that could not be resolved to a known entity."
+            )
+        return Reason(
+            code=str(alert.kind),
+            lane=Lane.GRAPH,
+            weight=alert.score / 100,
+            statement=statement,
+            comparison=alert.comparison,
+            # Points at the group, not at this donation. An analyst following
+            # it should arrive at the pattern rather than back at the single
+            # payment that cannot justify anything on its own.
+            evidence_ref=alert.alert_id,
         )
 
     def _reason(self, signal, ctx: RuleContext) -> Reason:

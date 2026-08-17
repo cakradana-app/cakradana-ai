@@ -19,6 +19,7 @@ from typing import Mapping, Protocol, Sequence
 from cakradana.calendar import ElectoralCalendar
 from cakradana.features import FeatureService, FeatureVector
 from cakradana.history import PointInTimeView
+from cakradana.lanes.alerts import AlertIndex
 from cakradana.lanes.graph import GraphLane
 from cakradana.registers import RegisterSet
 from cakradana.rules import RuleEngine, RuleSet
@@ -47,8 +48,15 @@ class GraphLaneAdapter:
 
     name = Lane.GRAPH
 
-    def __init__(self) -> None:
-        self._lane = GraphLane()
+    def __init__(self, alerts: AlertIndex | None = None) -> None:
+        self._lane = GraphLane(alerts)
+
+    def use(self, alerts: AlertIndex) -> None:
+        self._lane.use(alerts)
+
+    @property
+    def alerts(self) -> AlertIndex:
+        return self._lane.alerts
 
     def evaluate(
         self,
@@ -69,6 +77,7 @@ class Scorer:
         calendar: ElectoralCalendar | None = None,
         registers: RegisterSet | None = None,
         lanes: Sequence[DetectionLane] | None = None,
+        alerts: AlertIndex | None = None,
         require_verified_citations: bool = True,
         model_version: str | None = None,
         composer: ScoreComposer | None = None,
@@ -83,7 +92,7 @@ class Scorer:
             ruleset, calendar=calendar, registers=registers
         )
         self.lanes: list[DetectionLane] = list(
-            lanes if lanes is not None else [GraphLaneAdapter()]
+            lanes if lanes is not None else [GraphLaneAdapter(alerts)]
         )
         self.model_version = model_version
         self.composer = composer or ScoreComposer()

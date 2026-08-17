@@ -244,6 +244,19 @@ class InMemoryDonationStore:
     def __len__(self) -> int:
         return len(self._donations)
 
+    @property
+    def latest_recorded_at(self) -> datetime | None:
+        """The moment of the most recent thing the store learned.
+
+        The correct "now" for any pass over the whole population: using the
+        wall clock instead would let a view include a window in which nothing
+        could have been recorded, which reads as a quiet period rather than as
+        the absence of data it is.
+        """
+        if not self._donations:
+            return None
+        return max(d.recorded_at for d in self._donations)
+
     def knowable_at(self, as_of: datetime) -> PointInTimeView:
         return PointInTimeView(self._index(), as_of)
 

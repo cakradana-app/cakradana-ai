@@ -224,6 +224,47 @@ def create_app(service: ScoringService | None = None) -> FastAPI:
             "previous": previous.model_dump(mode="json") if previous else None,
         }
 
+    @app.post(f"{API_PREFIX}/alerts/detect")
+    def detect_alerts(
+        svc: ScoringService = Depends(current_service),
+        _: None = Depends(require_token),
+    ) -> dict:
+        """Run structural detection across the population.
+
+        Separate from scoring because a cluster is not a property of any of its
+        members: it becomes visible only once enough of it has arrived, and no
+        per-donation call is the right moment to look for it.
+        """
+        alerts = svc.detect_group_alerts()
+        return {
+            "detected": len(alerts),
+            "detected_at": (
+                svc.alerts_detected_at.isoformat() if svc.alerts_detected_at else None
+            ),
+            "alerts": [alert.model_dump(mode="json", by_alias=True) for alert in alerts],
+        }
+
+    @app.get(f"{API_PREFIX}/alerts")
+    def alerts(
+        svc: ScoringService = Depends(current_service),
+        _: None = Depends(require_token),
+    ) -> dict:
+        """Clusters as they stood at the last detection pass.
+
+        Reports when detection last ran. A stale empty list and a genuinely
+        clean population look identical otherwise, and only one of them means
+        nothing was found.
+        """
+        found = svc.group_alerts
+        return {
+            "detected": len(found),
+            "detected_at": (
+                svc.alerts_detected_at.isoformat() if svc.alerts_detected_at else None
+            ),
+            "has_run": svc.alerts_detected_at is not None,
+            "alerts": [alert.model_dump(mode="json", by_alias=True) for alert in found],
+        }
+
     @app.get(f"{API_PREFIX}/explain/{{donation_id}}")
     def explain(
         donation_id: str,
