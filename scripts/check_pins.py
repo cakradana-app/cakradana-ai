@@ -40,7 +40,11 @@ def normalise(name: str) -> str:
 
 def declared(pyproject: str, section: str) -> dict[str, str]:
     """Requirement strings from one dependency array, by distribution name."""
-    match = re.search(rf"^{section}\s*=\s*\[(.*?)\]", pyproject, re.S | re.M)
+    # Greedy to the closing bracket on its own line. A non-greedy match stopped
+    # at the first "]", so an extras spec like "uvicorn[standard]>=0.30" would
+    # truncate the array and silently drop every dependency declared after it —
+    # and the check would report success.
+    match = re.search(rf"^{section}\s*=\s*\[(.*?)^\]", pyproject, re.S | re.M)
     if not match:
         return {}
     found: dict[str, str] = {}
@@ -80,12 +84,19 @@ def satisfies(version: str, requirement: str) -> str | None:
     if re.search(r"[a-zA-Z]", version.split("+")[0].lstrip("0123456789.")):
         return f"{version} is not a plain release version"
     actual = version_tuple(version)
-    for operator, bound in re.findall(r"(>=|<=|==|<|>|!=)\s*([\w.]+)", requirement):
+    # `~=` first in the alternation: leading with `<`/`>` would match the tail
+    # of a two-character operator and read the wrong bound.
+    for operator, bound in re.findall(
+        r"(~=|>=|<=|==|!=|<|>)\s*([\w.]+)", requirement
+    ):
         expected = version_tuple(bound)
         width = max(len(actual), len(expected))
         left = actual + (0,) * (width - len(actual))
         right = expected + (0,) * (width - len(expected))
         ok = {
+            # Compatible-release: at least the bound, and no change to the
+            # component before its last one.
+            "~=": left >= right and left[: len(expected) - 1] == right[: len(expected) - 1],
             ">=": left >= right,
             "<=": left <= right,
             "==": left == right,

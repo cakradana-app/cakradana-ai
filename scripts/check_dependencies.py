@@ -70,7 +70,13 @@ def stdlib() -> set[str]:
 
 def main() -> int:
     declared_names = declared()
-    known = stdlib() | {"cakradana", "tests"}
+    # This repository's own top-level modules. The CI scripts are part of the
+    # repo and are imported by their own tests through sys.path, so treating
+    # them as third-party would demand a distribution that does not exist.
+    local = {"cakradana", "tests"} | {
+        path.stem for path in (ROOT / "scripts").glob("*.py")
+    }
+    known = stdlib() | local
 
     missing: dict[str, set[str]] = {}
     for path in [*PACKAGE.rglob("*.py"), *TESTS.rglob("*.py")]:
