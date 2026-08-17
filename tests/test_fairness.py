@@ -11,7 +11,7 @@ import pytest
 
 from cakradana.evaluation.fairness import (
     MAX_FALSE_FLAG_DISPARITY,
-    MIN_GROUP_REVIEWED,
+    MIN_GROUP_CLEAN,
     REQUIRED_BREAKDOWNS,
     Cohort,
     affiliation_assessment,
@@ -88,16 +88,16 @@ class TestGroupMeasurability:
 
     def test_the_threshold_is_the_documented_one(self):
         just_under = differential_performance(
-            cohorts(group="A", reviewed_clean=MIN_GROUP_REVIEWED - 1, false_flags=5),
+            cohorts(group="A", reviewed_clean=MIN_GROUP_CLEAN - 1, false_flags=5),
             attribute="affiliation",
         )
         assert just_under.groups[0].false_flag_rate is None
 
         at_it = differential_performance(
-            cohorts(group="A", reviewed_clean=MIN_GROUP_REVIEWED, false_flags=5),
+            cohorts(group="A", reviewed_clean=MIN_GROUP_CLEAN, false_flags=5),
             attribute="affiliation",
         )
-        assert at_it.groups[0].false_flag_rate == pytest.approx(5 / MIN_GROUP_REVIEWED)
+        assert at_it.groups[0].false_flag_rate == pytest.approx(5 / MIN_GROUP_CLEAN)
 
     def test_a_group_with_no_confirmed_clean_donations_cannot_be_measured(self):
         """A false-flag rate needs donations that were confirmed fine. Without
@@ -195,7 +195,11 @@ class TestDisparity:
     def test_unknown_attributes_form_their_own_group_rather_than_vanishing(self):
         """If the unknowns are one district whose records digitise badly,
         dropping them hides exactly that."""
-        members = cohorts(group="A", reviewed_clean=100, false_flags=10)
+        # The known half has to carry the attribute being broken down on, or
+        # every member lands in "unknown" and the assertion is trivially true.
+        members = cohorts(
+            group="Jakarta", attribute="district", reviewed_clean=100, false_flags=10
+        )
         members += [
             Cohort(
                 donation_id=f"x-{i}",
@@ -209,7 +213,7 @@ class TestDisparity:
         ]
         report = differential_performance(members, attribute="district")
         names = {g.group for g in report.groups}
-        assert "unknown" in names
+        assert names == {"Jakarta", "unknown"}
         assert sum(g.total for g in report.groups) == len(members)
 
     def test_a_size_band_breakdown_uses_the_amount(self):
@@ -354,3 +358,141 @@ class TestFullAssessment:
 
     def test_the_description_names_the_verdict(self):
         assert "fairness:" in assess(self.population()).describe()
+
+
+class TestDefectsFoundInReview:
+    """Each of these reproduced a real defect before it was fixed.
+
+    Kept as tests rather than fixed silently: every one is a case where a
+    figure the data could not support was reading as a measurement, which is
+    the failure this module exists to prevent and therefore the failure it is
+    most likely to reintroduce.
+    """
+
+    def test_a_group_reviewed_but_almost_never_clean_yields_no_rate(self):
+        """The measurability floor applies to the rate's own denominator.
+
+        Counting reviewed donations let a group clear it on donations that were
+        almost all confirmed risky, then produce a false-flag rate from the one
+        clean observation — a tenfold disparity and a hard promotion failure
+        from a single donation.
+        """
+        risky_heavy = [
+            Cohort(
+                donation_id=f"a-{i}",
+                score=0.5,
+                flagged=False,
+                affiliation="A",
+                reviewed=True,
+                confirmed_risky=True,
+            )
+            for i in range(MIN_GROUP_CLEAN - 1)
+        ] + [
+            Cohort(
+                donation_id="a-clean",
+                score=0.5,
+                flagged=True,
+                affiliation="A",
+                reviewed=True,
+                confirmed_risky=False,
+            )
+        ]
+        members = risky_heavy + cohorts(
+            group="B", reviewed_clean=100, false_flags=10
+        )
+        report = differential_performance(members, attribute="affiliation")
+        assert report.disparity is None
+        assert report.within_tolerance is None
+
+    def test_a_gap_the_intervals_do_not_separate_is_unresolved_not_clean(self):
+        """At the measurability floor a 95% interval still spans a factor of
+        two, so point estimates alone would fail a model on sampling noise. A
+        gate that fails on noise is one people learn to override."""
+        members = cohorts(group="A", reviewed_clean=30, false_flags=9) + cohorts(
+            group="B", reviewed_clean=30, false_flags=5
+        )
+        report = differential_performance(members, attribute="affiliation")
+        assert report.disparity > MAX_FALSE_FLAG_DISPARITY
+        assert report.separated is False
+        assert report.within_tolerance is None
+        assert any("intervals overlap" in c for c in report.concerns())
+
+    def test_a_gap_the_intervals_do_separate_is_a_finding(self):
+        members = cohorts(group="A", reviewed_clean=400, false_flags=160) + cohorts(
+            group="B", reviewed_clean=400, false_flags=40
+        )
+        report = differential_performance(members, attribute="affiliation")
+        assert report.separated is True
+        assert report.within_tolerance is False
+
+    def test_widely_unknown_affiliation_blocks_rather_than_annotates(self):
+        """A model passing a neutrality check on 5% of the population, with the
+        caveat printed beside the word "pass", is the failure this whole module
+        was written to prevent."""
+        members = cohorts(group="PartaiA", reviewed_clean=200, false_flags=20) + cohorts(
+            group="PartaiB", reviewed_clean=200, false_flags=20
+        )
+        # The unknowns form their own measurable group, at the same rate as
+        # the known ones. Leaving them at zero false flags would make the
+        # disparity unmeasurable for a different reason and test nothing.
+        members += [
+            Cohort(
+                donation_id=f"unknown-{i}",
+                score=0.4,
+                flagged=i % 10 == 0,
+                reviewed=True,
+                confirmed_risky=False,
+            )
+            for i in range(8000)
+        ]
+        report = affiliation_assessment(members)
+        assert report.errors.within_tolerance is True
+        assert report.acceptable is None
+
+    def test_a_measured_disparity_outranks_the_unknown_share_guard(self):
+        """False and None both block, and they call for different responses.
+        Downgrading a finding the data supports into "could not tell" loses the
+        more informative answer."""
+        members = cohorts(group="PartaiA", reviewed_clean=400, false_flags=160) + cohorts(
+            group="PartaiB", reviewed_clean=400, false_flags=40
+        )
+        members += [
+            Cohort(
+                donation_id=f"u-{i}",
+                score=0.4,
+                flagged=i % 10 == 0,
+                reviewed=True,
+                confirmed_risky=False,
+            )
+            for i in range(8000)
+        ]
+        assert affiliation_assessment(members).acceptable is False
+
+    def test_a_blank_affiliation_is_an_unknown_not_a_party(self):
+        """`is not None` in one filter and truthiness in another let a blank
+        count toward the total while contributing to no party, inflating every
+        expected cell and manufacturing an association out of identical rates.
+        """
+        even = [
+            Cohort(donation_id=f"a-{i}", score=0.5, flagged=i % 2 == 0, affiliation="A")
+            for i in range(100)
+        ] + [
+            Cohort(donation_id=f"b-{i}", score=0.5, flagged=i % 2 == 0, affiliation="B")
+            for i in range(100)
+        ]
+        assert cramers_v(even) == pytest.approx(0.0, abs=1e-9)
+
+        blanks = [
+            Cohort(donation_id=f"z-{i}", score=0.5, flagged=False, affiliation="")
+            for i in range(100)
+        ]
+        assert cramers_v(even + blanks) == pytest.approx(0.0, abs=1e-9)
+        assert affiliation_assessment(even + blanks).unknown_affiliation_share == (
+            pytest.approx(1 / 3)
+        )
+
+    def test_a_negative_amount_is_refused_rather_than_banded(self):
+        """The fallthrough put it in the band reserved for the largest
+        contributions, so a sign error upstream would be reported there."""
+        with pytest.raises(ValueError):
+            size_band(-1)

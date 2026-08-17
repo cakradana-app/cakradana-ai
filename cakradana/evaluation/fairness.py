@@ -44,11 +44,31 @@ from typing import Callable, Mapping, Sequence
 
 from cakradana.evaluation.sampling import wilson_interval
 
-#: Below this many reviewed donations a group rate is noise. Chosen so the 95%
-#: Wilson interval on a mid-range rate is narrower than the disparity threshold
-#: being tested; under it the comparison could not distinguish a real gap from
-#: sampling variation, so no rate is reported.
-MIN_GROUP_REVIEWED = 30
+#: Below this many *confirmed-clean* reviewed donations a group's false-flag
+#: rate is noise, so no rate is reported.
+#:
+#: Applied to the rate's own denominator rather than to the reviewed count. A
+#: group can be well reviewed and still contain almost no confirmed-clean
+#: donations, and a false-flag rate computed from one of those is 0.0 or 1.0
+#: with nothing in between — a figure that produced a tenfold disparity and a
+#: hard promotion failure from a single donation.
+#:
+#: The value alone does not make a comparison sound: at thirty the 95% interval
+#: on a mid-range rate still spans a factor of two, which is wider than the
+#: tolerance below. That is why the verdict requires the intervals to be
+#: disjoint rather than resting on the point estimates.
+MIN_GROUP_CLEAN = 30
+
+#: Above this share of unknown recipient affiliation, the neutrality figures
+#: describe a subset rather than the population, and the assessment reports
+#: that it could not be made rather than passing with a caveat attached.
+MAX_UNKNOWN_AFFILIATION = 0.20
+
+#: Association between flagging and affiliation above which the assessment
+#: cannot be completed without a human explaining it. Not a defect threshold —
+#: one party may genuinely receive more risky donations — but that is a claim
+#: about the population, and nothing here can establish it.
+MAX_ASSOCIATION = 0.20
 
 #: Largest defensible ratio between the highest and lowest group false-flag
 #: rate. The four-fifths convention, expressed as a maximum rather than a
@@ -70,7 +90,14 @@ SIZE_BANDS: tuple[tuple[str, int, int | None], ...] = (
 
 
 def size_band(amount_idr: int) -> str:
-    """Which band an amount falls in."""
+    """Which band an amount falls in.
+
+    A negative amount is refused rather than swept into a band. The fallthrough
+    used to put it in the highest one, so a sign error upstream would land in
+    the band reserved for the largest contributions and be reported there.
+    """
+    if amount_idr < 0:
+        raise ValueError(f"a donation cannot be negative: {amount_idr}")
     for name, lower, upper in SIZE_BANDS:
         if amount_idr >= lower and (upper is None or amount_idr < upper):
             return name
@@ -170,15 +197,43 @@ class DifferentialReport:
         return self.disparity is not None
 
     @property
+    def separated(self) -> bool | None:
+        """Whether the two extreme rates are distinguishable from each other.
+
+        The point estimates are noisy at the sample sizes this runs on: at the
+        documented floor a 95% interval on a mid-range rate still spans a factor
+        of two, which is wider than the tolerance being tested. Comparing point
+        estimates alone would fail a model on sampling variation, and a gate
+        that fails on noise is one people learn to override.
+        """
+        if self.extremes is None:
+            return None
+        by_name = {group.group: group for group in self.groups}
+        high = by_name[self.extremes[0]].false_flag_interval
+        low = by_name[self.extremes[1]].false_flag_interval
+        if high is None or low is None:
+            return None
+        return high[0] > low[1]
+
+    @property
     def within_tolerance(self) -> bool | None:
         """Whether the spread is defensible.
 
-        None when it could not be measured — which is not the same as passing,
-        and callers must not treat it as passing.
+        Three outcomes, and the middle one is the point. False means a gap was
+        found that the data supports. True means the groups are close. None
+        means the point estimates differ by more than the tolerance but the
+        intervals overlap, so there is a possible disparity that this much
+        reviewed data cannot settle — which blocks, because it is exactly the
+        state in which somebody should look rather than proceed.
         """
         if self.disparity is None:
             return None
-        return self.disparity <= MAX_FALSE_FLAG_DISPARITY
+        if self.disparity <= MAX_FALSE_FLAG_DISPARITY:
+            return True
+        separated = self.separated
+        if separated is None:
+            return None
+        return False if separated else None
 
     def concerns(self) -> tuple[str, ...]:
         found: list[str] = []
@@ -190,11 +245,21 @@ class DifferentialReport:
             return tuple(found)
         if self.disparity > MAX_FALSE_FLAG_DISPARITY and self.extremes:
             worst, best = self.extremes
-            found.append(
+            gap = (
                 f"{self.attribute}: {worst} is flagged in error "
                 f"{self.disparity:.2f}x as often as {best}, above the "
                 f"{MAX_FALSE_FLAG_DISPARITY:.2f} tolerance"
             )
+            if self.separated:
+                found.append(gap)
+            else:
+                # Reported either way. A gap this size that the data cannot yet
+                # settle is not a clean result, and saying nothing about it
+                # would be the same mistake as asserting it.
+                found.append(
+                    f"{gap}, but the intervals overlap — more reviewed "
+                    f"donations are needed before this can be called"
+                )
         unmeasured = [g.group for g in self.groups if g.false_flag_rate is None]
         if unmeasured:
             found.append(
@@ -217,31 +282,41 @@ def _performance(group: str, members: Sequence[Cohort]) -> GroupPerformance:
     reviewed = [m for m in members if m.reviewed]
     flagged = sum(1 for m in members if m.flagged)
     confirmed = sum(1 for m in reviewed if m.confirmed_risky)
+    clean = [m for m in reviewed if not m.confirmed_risky]
+    risky = [m for m in reviewed if m.confirmed_risky]
+    flagged_and_reviewed = [m for m in reviewed if m.flagged]
 
-    if len(reviewed) < MIN_GROUP_REVIEWED:
+    precision = (
+        sum(1 for m in flagged_and_reviewed if m.confirmed_risky)
+        / len(flagged_and_reviewed)
+        if flagged_and_reviewed
+        else None
+    )
+    detection = sum(1 for m in risky if m.flagged) / len(risky) if risky else None
+
+    # Gated on the denominator the reported rate actually has. Counting
+    # `reviewed` here let a group clear the floor on donations that were almost
+    # all confirmed risky and then produce a false-flag rate from a single clean
+    # observation.
+    if len(clean) < MIN_GROUP_CLEAN:
         return GroupPerformance(
             group=group,
             total=len(members),
             reviewed=len(reviewed),
             flagged=flagged,
             confirmed_risky=confirmed,
-            precision=None,
+            precision=precision,
             false_flag_rate=None,
-            detection_rate=None,
+            detection_rate=detection,
             false_flag_interval=None,
             unmeasurable_reason=(
-                f"{len(reviewed)} reviewed donations, below the {MIN_GROUP_REVIEWED} "
-                f"needed for a rate that is not sampling noise"
+                f"{len(clean)} of {len(reviewed)} reviewed donations were "
+                f"confirmed clean, below the {MIN_GROUP_CLEAN} a false-flag rate "
+                f"needs; there is too little here for the rate to mean anything"
             ),
         )
 
-    clean = [m for m in reviewed if not m.confirmed_risky]
-    risky = [m for m in reviewed if m.confirmed_risky]
-    flagged_and_reviewed = [m for m in reviewed if m.flagged]
-
     false_flags = sum(1 for m in clean if m.flagged)
-    false_flag_rate = false_flags / len(clean) if clean else None
-    interval = wilson_interval(false_flags, len(clean)) if clean else None
 
     return GroupPerformance(
         group=group,
@@ -249,23 +324,10 @@ def _performance(group: str, members: Sequence[Cohort]) -> GroupPerformance:
         reviewed=len(reviewed),
         flagged=flagged,
         confirmed_risky=confirmed,
-        precision=(
-            sum(1 for m in flagged_and_reviewed if m.confirmed_risky)
-            / len(flagged_and_reviewed)
-            if flagged_and_reviewed
-            else None
-        ),
-        false_flag_rate=false_flag_rate,
-        detection_rate=(
-            sum(1 for m in risky if m.flagged) / len(risky) if risky else None
-        ),
-        false_flag_interval=interval,
-        unmeasurable_reason=(
-            None
-            if false_flag_rate is not None
-            else "no reviewed donation in this group was confirmed clean, so "
-            "there is nothing a false flag could have been measured against"
-        ),
+        precision=precision,
+        false_flag_rate=false_flags / len(clean),
+        detection_rate=detection,
+        false_flag_interval=wilson_interval(false_flags, len(clean)),
     )
 
 
@@ -347,7 +409,11 @@ def cramers_v(cohorts: Sequence[Cohort]) -> float | None:
     Returns None when the table is degenerate — one affiliation, or nothing
     flagged — because an association needs two things to associate.
     """
-    known = [c for c in cohorts if c.affiliation is not None]
+    # Both filters test the same thing. Testing `is not None` here and
+    # truthiness below let a cohort with an empty-string affiliation count
+    # toward the total while contributing to no party, inflating every expected
+    # cell and manufacturing an association where the rates were identical.
+    known = [c for c in cohorts if c.affiliation]
     if not known:
         return None
 
@@ -408,18 +474,44 @@ class AffiliationReport:
 
         None when the assessment could not be made. An unevaluated fairness
         check is not a passed one, and the promotion gate treats it as blocking.
+
+        Two conditions make the assessment unavailable even when the error
+        rates themselves came out even.
+
+        A large unknown-affiliation share means the figures describe a subset.
+        Reporting that in a detail string while returning True would let a model
+        pass a neutrality check on 5% of the population, with the caveat printed
+        beside the word "pass".
+
+        A strong association between flagging and affiliation is not itself a
+        defect — one party may genuinely receive more risky donations — but the
+        assessment cannot tell which it is looking at, and "must be explained
+        before serving" is not something a gate can assert on anyone's behalf.
         """
-        return self.errors.within_tolerance
+        # A measured disparity outranks both guards. They exist to stop an
+        # unsupported figure reading as a pass; neither is a reason to downgrade
+        # a finding the data does support into "could not tell", which would
+        # lose the more informative answer.
+        verdict = self.errors.within_tolerance
+        if verdict is False:
+            return False
+        if self.unmeasurable_reason is not None:
+            return None
+        if self.unknown_affiliation_share > MAX_UNKNOWN_AFFILIATION:
+            return None
+        if self.association is not None and self.association >= MAX_ASSOCIATION:
+            return None
+        return verdict
 
     def concerns(self) -> tuple[str, ...]:
         found = list(self.errors.concerns())
-        if self.unknown_affiliation_share > 0.20:
+        if self.unknown_affiliation_share > MAX_UNKNOWN_AFFILIATION:
             found.append(
                 f"affiliation is unknown for "
                 f"{self.unknown_affiliation_share:.0%} of donations; the rates "
                 f"above describe the remainder, not the population"
             )
-        if self.association is not None and self.association >= 0.20:
+        if self.association is not None and self.association >= MAX_ASSOCIATION:
             found.append(
                 f"flagging and affiliation are associated at V={self.association:.2f}; "
                 f"this is not itself a defect — one party may genuinely receive "
@@ -463,7 +555,10 @@ def affiliation_assessment(cohorts: Sequence[Cohort]) -> AffiliationReport:
             unmeasurable_reason="no donations supplied",
         )
 
-    known = [c for c in cohorts if c.affiliation is not None]
+    # Same filter as cramers_v: an empty-string affiliation is an unknown, not
+    # a party, and counting it as known would make the unknown share read lower
+    # than it is.
+    known = [c for c in cohorts if c.affiliation]
     rates: dict[str, float] = {}
     for party in sorted({c.affiliation for c in known if c.affiliation}):
         members = [c for c in known if c.affiliation == party]

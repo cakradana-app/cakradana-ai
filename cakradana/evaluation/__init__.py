@@ -1,8 +1,10 @@
 """Measuring the system in a way that is allowed to produce a bad answer."""
 
 from cakradana.evaluation.fairness import (
+    MAX_ASSOCIATION,
     MAX_FALSE_FLAG_DISPARITY,
-    MIN_GROUP_REVIEWED,
+    MAX_UNKNOWN_AFFILIATION,
+    MIN_GROUP_CLEAN,
     REQUIRED_BREAKDOWNS,
     AffiliationReport,
     Cohort,
@@ -47,7 +49,9 @@ from cakradana.evaluation.splits import (
 
 __all__ = [
     "MAX_FALSE_FLAG_DISPARITY",
-    "MIN_GROUP_REVIEWED",
+    "MAX_ASSOCIATION",
+    "MAX_UNKNOWN_AFFILIATION",
+    "MIN_GROUP_CLEAN",
     "REQUIRED_BREAKDOWNS",
     "AffiliationReport",
     "AuditDraw",
