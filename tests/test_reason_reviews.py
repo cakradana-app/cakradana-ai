@@ -185,15 +185,37 @@ class TestWhatIsShipped:
     def test_the_ledger_ships_with_the_code(self):
         assert REVIEW_FILE.is_file()
 
-    def test_no_reason_code_has_been_reviewed_by_anybody(self):
-        """The honest state of this system. It is asserted rather than left
-        implicit so that the first recorded review has to be a deliberate
-        change to this test as well as to the ledger."""
+    #: The five whose wording a reviewer found misleading. Named rather than
+    #: counted, so that removing one from the ledger fails here instead of
+    #: quietly reducing the number of sentences this system is answerable for.
+    REJECTED = (
+        'LAYERING_CHAIN',
+        'MODEL_SCORE',
+        'PASS_THROUGH',
+        'STD_DONASI_SENDER',
+        'UNUSUAL_COMBINATION',
+    )
+
+    def test_the_shipped_ledger_is_reviewed_but_not_complete(self):
+        """The honest state of this system.
+
+        It was every code unreviewed; it is now every code read, with five
+        wordings recorded as misleading and still emitted. Both are states the
+        gate refuses, and for the same reason: a sentence an analyst acts on
+        that nobody can stand behind. The difference is that the remedy is now
+        known — rewrite those five — rather than unknown.
+
+        Asserted rather than left implicit so that changing what this system
+        has reviewed has to be a deliberate change to this test as well as to
+        the ledger.
+        """
         coverage = default_ledger().coverage()
         assert coverage.total == len(stateable_codes())
-        assert coverage.validated == ()
-        assert coverage.rejected == ()
-        assert len(coverage.unreviewed) == coverage.total
+        assert tuple(sorted(coverage.rejected)) == self.REJECTED
+        assert len(coverage.validated) == coverage.total - len(self.REJECTED)
+        assert coverage.unreviewed == ()
+        # Still false, and this is the point. Reviewing a sentence and finding
+        # it misleading does not make it fit to ship; it records why it is not.
         assert coverage.complete is False
 
     def test_a_code_carrying_no_wording_is_not_counted_as_outstanding(self):

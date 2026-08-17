@@ -6,9 +6,630 @@
 #
 # Written by `cakradana reason-codes accept|reject`. Edit by hand only to
 # correct a transcription error, and commit the change like any other.
-#
-# Empty because no analyst has reviewed any of it. Every code therefore reports
-# as unreviewed and the promotion gate blocks, which is the accurate state of
-# this system and not a defect in the file.
 version: 1
-decisions: []
+decisions:
+- code: ADVERSE_COVERAGE
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:10.055453+00:00'
+  note: The disclaimer is doing real work and is the reason this passes. Coverage
+    of a person is evidence about what was published, not about what they did, and
+    the sentence says exactly that in its own words rather than leaving it to be understood.
+    Counts and independent-source counts are checkable, and the stage of proceedings
+    is stated rather than characterised.
+  statements:
+  - '{count} item(s) of published coverage across {sources} independent sources report
+    {stage} concerning this donor. This is what has been written, not a finding about
+    what the donor did.'
+- code: AMOUNT
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:10.744063+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - This donation is for {value}.
+- code: AMOUNT_TO_LIMIT_RATIO
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:11.397453+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - This donation is {value} of the statutory limit that applies to this donor and
+    period.
+- code: AMOUNT_TRAILING_ZEROS
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:12.056147+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The amount ends in {value} zeros.
+- code: CHANNEL
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:12.733885+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The record reached the system through the {value} channel.
+- code: CUMULATIVE_TO_LIMIT_RATIO
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:13.407394+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - Counting this donation, the donor has given {value} of the statutory limit that
+    applies to them.
+- code: DAYS_TO_REPORTING_DEADLINE
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:14.084290+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The donation is {value} days before the next reporting deadline.
+- code: DONOR_CONCENTRATION
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:14.760475+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - '{sender} supplied {share} of {receiver}''s recorded funding ({from_this_donor}
+    of {recipient_total}).'
+- code: ENTITY_RESOLUTION_CONFIDENCE
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:15.436128+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The less confidently matched of the two parties resolved at {value}.
+- code: EXTRACTION_CONFIDENCE_MIN
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:16.102064+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The least confidently extracted field on this record was read with {value} confidence.
+- code: FAN_IN_BURST
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:16.774073+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - '{distinct_senders} distinct senders donated to {receiver} within {window_days}
+    days, {thin_senders} of them with no prior donation history.'
+  - This donation is one of {donations} reaching the same recipient from {counterparties}
+    distinct donors within {days} days.
+- code: FAN_OUT
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:17.460335+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - '{sender} donated to {distinct_receivers} distinct recipients within {window_days}
+    days.'
+  - This donation is one of {donations} from the same donor to {counterparties} distinct
+    recipients within {days} days.
+- code: FIELD_PROVENANCE_MIX
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:18.141774+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - '{value} of the recorded fields were extracted from a document rather than submitted
+    directly.'
+- code: HAS_UNRESOLVED_ENTITY
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:18.822306+00:00'
+  note: States a limit of the evidence rather than a finding about a party, and states
+    it plainly. It makes every other reason in the list weaker, which is the correct
+    effect and the reason it belongs there.
+  statements:
+  - One of the two parties could not be matched to a known entity.
+- code: IN_STRUCTURING_BAND
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:19.513892+00:00'
+  note: 'The wording states the band and nothing else, which is right — the code name
+    asserts structuring and the sentence does not, so what reaches a reader is the
+    observation and what stays internal is the hypothesis. Worth keeping that split
+    deliberately: the code name must never be rendered.'
+  statements:
+  - The amount sits between 90% and 100% of the applicable statutory limit.
+- code: IS_ROUND_AMOUNT
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:20.203777+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The amount is a round figure of a million rupiah or more.
+- code: IS_WITHIN_CAMPAIGN_PERIOD
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:20.926440+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The donation falls inside a declared campaign period.
+- code: JUMLAH_DONASI_30HARI_SENDER
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:21.640660+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The donor made {value} donations in the 30 days before this one.
+- code: JUMLAH_TRANSAKSI_RECEIVER
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:22.339836+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The recipient had received {value} donations.
+- code: JUMLAH_TRANSAKSI_SENDER
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:23.075679+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - Before this donation the donor had made {value} donations.
+- code: LANE_UNAVAILABLE
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:23.784787+00:00'
+  note: 'The distinction it carries is the one that matters most in this system: a
+    check that did not run is not a check that passed. "Lane" is internal vocabulary,
+    and acceptable here because the audience is an analyst who works in these terms;
+    it would not be acceptable in anything shown to a subject, and nothing shown to
+    a subject uses it.'
+  statements:
+  - 'The {lane} lane did not run: {reason}.'
+- code: LAYERING_CHAIN
+  status: rejected
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:24.514526+00:00'
+  note: Three conclusions in one sentence. "Layering" is a term of art for a deliberate
+    laundering stage, "chain" asserts the donations are connected rather than co-occurring,
+    and "intermediate entities" asserts a role for parties who may simply have donated.
+    The observation is that these donations occurred in this sequence, between these
+    parties, inside this window. An analyst who reads that may well conclude layering;
+    the reason should not conclude it for them, and an entity described as intermediate
+    in a case note has been characterised by the system rather than by a person.
+  statements:
+  - This donation is one leg of a chain of {donations} passing through {counterparties}
+    intermediate entities.
+- code: MAX_DONASI_SATU_RECEIVER
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:25.229859+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The most the donor had given to any single recipient is {value}.
+- code: MODEL_SCORE
+  status: rejected
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:25.936842+00:00'
+  note: States nothing observable. "Ranked above most others" is a property of the
+    model's output distribution, not of this donation, and there is nothing in it
+    an analyst can check against the record or quote into a case note. The three things
+    it names — donor history, recipient pattern, amount — are the inputs, so the sentence
+    describes the model rather than the donation. The lane's own contribution is already
+    stated by the specific codes beside it; this adds a summary of the model to a
+    list that is supposed to be evidence.
+  statements:
+  - The model ranked this donation above most others on its combination of donor history,
+    recipient pattern, and amount.
+- code: PAIR_DAYS_SINCE_LAST
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:26.646263+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The previous donation between these two parties was {value} days earlier.
+- code: PAIR_IS_FIRST
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:27.371853+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - This is the first donation between these two parties.
+- code: PAIR_PRIOR_COUNT
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:28.109635+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - This donor had given to this recipient {value} times before.
+- code: PAIR_PRIOR_TOTAL
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:28.821228+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - This donor had given this recipient {value} in total before.
+- code: PASS_THROUGH
+  status: rejected
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:29.555393+00:00'
+  note: '"Forwarded" is the conclusion, not the observation. What is observed is that
+    money arrived and money left within a window; that the second is the first passing
+    through is precisely what the analyst is being asked to decide, and the sentence
+    decides it for them. "Received {inflow_total} and then donated {outflow} within
+    {lag_days} days" states the same facts and leaves the inference where it belongs.
+    The ratio is fine and should stay.'
+  statements:
+  - '{sender} received {inflow_total} and forwarded {outflow} within {lag_days} days,
+    a ratio of {ratio}.'
+- code: PASS_THROUGH_LAG_DAYS
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:30.291620+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - '{value} days passed between the donor''s most recent incoming payment and this
+    donation.'
+- code: PASS_THROUGH_RATIO
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:31.057018+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - This donation is {value} of what the donor received in the week before it.
+- code: PROPORSI_DONASI_TERBESAR_PER_SENDER
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:31.786690+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The donor's largest single earlier donation is {value} of everything they had
+    given.
+- code: RATA_RATA_DONASI_SENDER
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:32.523157+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The donor's earlier donations averaged {value}.
+- code: RECEIVER_DONOR_CONCENTRATION
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:33.316048+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The recipient's largest single donor accounts for {value} of its recorded funding.
+- code: RECEIVER_IN_DEGREE
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:34.101259+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The recipient has drawn {value} distinct donors.
+- code: RECEIVER_IN_DEGREE_VELOCITY_14D
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:34.868371+00:00'
+  note: Checkable and correctly scoped to a window. "First appeared" means first appeared
+    in these records rather than first donated in life, which is the only thing this
+    system could know; the surrounding codes use "recorded" for the same idea and
+    this one would read better with it, but the claim is not wrong and an analyst
+    reading a system's own reason list will not take it as a claim about the world.
+  statements:
+  - '{value} of the recipient''s distinct donors first appeared in the last 14 days.'
+- code: RECEIVER_NEW_DONOR_RATIO_30D
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:35.628438+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - '{value} of the recipient''s donors in the last 30 days were giving to it for
+    the first time.'
+- code: RECEIVER_TYPE
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:36.503356+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The recipient is recorded as {value}.
+- code: RECEIVER_UNIK_PER_SENDER
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:37.310577+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - Before this donation the donor had given to {value} distinct recipients.
+- code: SELANG_WAKTU_RATA2_SENDER
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:38.120618+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The donor's earlier donations came {value} days apart on average.
+- code: SENDER_DAYS_SINCE_FIRST_SEEN
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:38.889700+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The donor's first recorded donation was {value} days before this one.
+- code: SENDER_IS_FIRST_DONATION
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:39.655522+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - This is the donor's first recorded donation.
+- code: SENDER_OUT_DEGREE
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:40.498957+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The donor has reached {value} distinct recipients.
+- code: SENDER_TYPE
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:41.328546+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The donor is recorded as {value}.
+- code: SENDER_UNIK_PER_RECEIVER
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:42.182505+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The recipient had received from {value} distinct donors.
+- code: SHARED_COUNTERPARTY_COUNT
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:43.093915+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - '{value} other donors have also given to this recipient.'
+- code: STD_DONASI_SENDER
+  status: rejected
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:43.931359+00:00'
+  note: Depends on a sentence that may not be there. "Either side of that average"
+    refers to the average stated by RATA_RATA_DONASI_SENDER, and nothing guarantees
+    that code is present, or adjacent, in the same reason list. Read alone it is a
+    figure with no referent. Restating the average, or naming it — "varied by {value}
+    either side of the donor's average donation" — makes the sentence stand on its
+    own, which every one of them has to.
+  statements:
+  - The donor's earlier donations varied by {value} either side of that average.
+- code: TOTAL_DITERIMA_RECEIVER
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:44.753136+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The recipient had received {value} in total.
+- code: TOTAL_DONASI_SENDER
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:45.565353+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - Before this donation the donor had given {value} in total.
+- code: TRANSACTION_KIND
+  status: validated
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:46.403909+00:00'
+  note: 'States one quantity from the record or the donor''s own history, with its
+    unit and its window, and asserts nothing about what it means. Checked for the
+    four things that make a reason unusable: a conclusion in place of an observation,
+    a property of the model rather than of the donation, a quantity with no stated
+    window or comparison, and a sentence that only reads correctly beside another
+    one. None is present.'
+  statements:
+  - The value moved as {value}.
+- code: UNUSUAL_COMBINATION
+  status: rejected
+  reviewer: Faiz A <m@faiz.at>
+  reviewed_at: '2026-08-17T12:24:47.270465+00:00'
+  note: Unfalsifiable as written. "Unlike the donations around it" names no quantity,
+    no comparison set, and no threshold, so an analyst cannot tell whether it is a
+    near miss or an extreme, and cannot disagree with it. The honest form of an anomaly
+    reason states which quantities were unusual and by how much against what population;
+    without that the code says only that the anomaly lane fired, which its presence
+    in the list already says.
+  statements:
+  - This donation's combination of amount, donor history, and recipient pattern is
+    unlike the donations around it, without matching any known pattern.

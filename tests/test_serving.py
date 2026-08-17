@@ -409,23 +409,45 @@ class TestWordingReviewIsVisible:
     the response is the only place the distinction can reach them.
     """
 
+    #: Every state the response is allowed to carry. Written as a closed set
+    #: rather than as "not unreviewed", so that a status invented later has to
+    #: be added here before it can reach an analyst unnoticed.
+    KNOWN = {"unreviewed", "validated", "rejected"}
+
     def test_every_reason_says_whether_anybody_read_its_wording(self, client):
+        """The field is present and meaningful, whatever the ledger says.
+
+        This asserted "unreviewed" while nothing had been reviewed, which made
+        it a test of the ledger's contents rather than of the response. What
+        matters at this boundary is that the distinction travels: every reason
+        carries a state a reader can act on, and none arrives blank.
+        """
         body = client.post(
             "/v1/score", headers=AUTH, json={"request_id": "r", "donation": donation()}
         ).json()
         reasons = body["result"]["behavioural"]["reasons"]
         assert reasons
-        assert all(r["wording_review"] == "unreviewed" for r in reasons)
+        assert all(r["wording_review"] in self.KNOWN for r in reasons)
 
     def test_the_response_summarises_what_is_unreviewed(self, client):
+        """The summary agrees with the reasons it summarises.
+
+        The check is the agreement, not the count: a summary listing nothing
+        while a reason beneath it reads "unreviewed" is the failure worth
+        catching, and it stays catchable however much of the catalogue has
+        been read.
+        """
         body = client.post(
             "/v1/score", headers=AUTH, json={"request_id": "r", "donation": donation()}
         ).json()
         behavioural = body["result"]["behavioural"]
-        assert set(behavioural["unreviewed_wording"]) == {
-            r["code"] for r in behavioural["reasons"]
-        }
-        assert behavioural["rejected_wording"] == []
+        for state, summary in (
+            ("unreviewed", "unreviewed_wording"),
+            ("rejected", "rejected_wording"),
+        ):
+            assert set(behavioural[summary]) == {
+                r["code"] for r in behavioural["reasons"] if r["wording_review"] == state
+            }
 
     def test_the_state_reaches_the_lane_breakdown_too(self, client):
         body = client.post(
@@ -436,4 +458,5 @@ class TestWordingReviewIsVisible:
             for lane in body["result"]["behavioural"]["lanes"]
             for reason in lane["reasons"]
         }
-        assert within <= {"unreviewed"}
+        assert within
+        assert within <= self.KNOWN

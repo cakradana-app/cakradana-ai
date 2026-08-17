@@ -46,18 +46,33 @@ def test_every_analyst_facing_code_has_a_reading():
 
 def test_a_reading_is_not_a_decision():
     # The property everything else here rests on. Reading every proposal must
-    # leave the ledger exactly as it was: unreviewed, and blocking.
+    # leave the ledger exactly as it was, whatever state that is.
+    #
+    # This used to be checked by asserting nothing was validated, which was a
+    # sound proxy only while the ledger was empty. Once decisions were recorded
+    # it would have failed against a working system — and, worse, a version of
+    # it weakened to keep passing would have stopped testing anything. So the
+    # invariant is now stated directly: every status is the same afterwards as
+    # before, and reading is what changed nothing.
     ledger = ReviewLedger.load(REVIEW_FILE) or ReviewLedger()
     before = ledger.coverage()
-    for entry in catalogue():
-        if entry.analyst_facing:
-            proposal_for(entry.code)
-    after = (ReviewLedger.load(REVIEW_FILE) or ReviewLedger()).coverage()
-    assert after == before
+    statuses_before = {
+        entry.code: ledger.status_of(entry.code)
+        for entry in catalogue()
+        if entry.analyst_facing
+    }
 
     for entry in catalogue():
         if entry.analyst_facing:
-            assert ledger.status_of(entry.code) is not ReviewStatus.VALIDATED
+            proposal_for(entry.code)
+
+    reloaded = ReviewLedger.load(REVIEW_FILE) or ReviewLedger()
+    assert reloaded.coverage() == before
+    assert {
+        entry.code: reloaded.status_of(entry.code)
+        for entry in catalogue()
+        if entry.analyst_facing
+    } == statuses_before
 
 
 def test_a_proposal_carries_its_reasoning():

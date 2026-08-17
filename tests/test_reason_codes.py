@@ -565,12 +565,21 @@ class TestTheResultSaysWhetherAnybodyReadIt:
         }
         assert within_lanes <= {ReviewStatus.UNREVIEWED}
 
-    def test_the_shipped_ledger_leaves_every_emitted_code_unreviewed(self, scored):
-        assert {code for code, _, _ in scored}
+    def test_the_shipped_ledger_has_a_status_for_every_emitted_code(self, scored):
+        """Nothing reaches an analyst whose wording nobody has ruled on.
+
+        This asserted the opposite until the catalogue was reviewed — every
+        emitted code unreviewed — and the inversion is the point of keeping it:
+        the property worth holding is not which state the ledger is in, but
+        that no code can be emitted while sitting outside it. A code added
+        tomorrow and rendered into a case bundle without a decision fails here.
+        """
+        emitted = {code for code, _, _ in scored}
+        assert emitted
+        statuses = default_statuses()
         assert all(
-            default_statuses().get(code, ReviewStatus.UNREVIEWED)
-            is ReviewStatus.UNREVIEWED
-            for code, _, _ in scored
+            statuses.get(code, ReviewStatus.UNREVIEWED) is not ReviewStatus.UNREVIEWED
+            for code in emitted
         )
 
 
