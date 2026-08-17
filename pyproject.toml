@@ -32,7 +32,7 @@ cakradana = "cakradana.cli:main"
 include = ["cakradana*"]
 
 [tool.setuptools.package-data]
-cakradana = ["rules/rulesets/*.yaml"]
+cakradana = ["rules/rulesets/*.yaml", "scoring/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

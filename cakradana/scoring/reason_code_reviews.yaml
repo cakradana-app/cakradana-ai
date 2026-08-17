@@ -1,0 +1,14 @@
+# Analyst review of reason-code wording.
+#
+# One entry per decision, kept rather than overwritten: a code accepted and
+# later rejected leaves both facts behind, and the first is what any score
+# issued in between was reported under.
+#
+# Written by `cakradana reason-codes accept|reject`. Edit by hand only to
+# correct a transcription error, and commit the change like any other.
+#
+# Empty because no analyst has reviewed any of it. Every code therefore reports
+# as unreviewed and the promotion gate blocks, which is the accurate state of
+# this system and not a defect in the file.
+version: 1
+decisions: []
