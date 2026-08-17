@@ -1,12 +1,13 @@
 """Command line entry points.
 
-Four commands, each corresponding to a step that used to be a loose script or
-a notebook cell:
+Five commands, each corresponding to a step that used to be a loose script, a
+notebook cell, or nothing at all:
 
-    generate   build a synthetic dataset and verify it contains its typologies
-    train      fit a model, measure it, and say whether it is worth shipping
-    score      score a dataset with the current rules and report what fired
-    benchmark  measure scoring latency, and whether cost grows with history
+    generate      build a synthetic dataset and verify it contains its typologies
+    train         fit a model, measure it, and say whether it is worth shipping
+    score         score a dataset with the current rules and report what fired
+    benchmark     measure scoring latency, and whether cost grows with history
+    reason-codes  read the wording shown to analysts, and record a decision on it
 
 The commands share the library the service uses. Nothing here computes a
 feature, applies a rule, or decides a threshold on its own — the previous
@@ -28,6 +29,16 @@ from cakradana.evaluation.timing import ScalingReport, measure
 from cakradana.features import FeatureService
 from cakradana.history import InMemoryDonationStore
 from cakradana.rules import RuleEngine, load_latest
+from cakradana.scoring.catalogue import catalogue, entry_for, wording_defects
+from cakradana.scoring.result import ReviewStatus
+from cakradana.scoring.review import (
+    REVIEW_FILE,
+    ReviewDecision,
+    ReviewLedger,
+    ReviewRefused,
+    default_ledger,
+    now,
+)
 from cakradana.training import TrainingConfig, train
 from cakradana.serving.service import ScoringService
 from cakradana.training.registry import save
@@ -82,7 +93,20 @@ def main(argv: list[str] | None = None) -> int:
         help="how much larger the second population is, for the scaling reading",
     )
 
+    reasons_cmd = sub.add_parser(
+        "reason-codes",
+        help="read the wording analysts are shown, and record a decision on it",
+    )
+    _add_reason_code_actions(reasons_cmd)
+
     args = parser.parse_args(argv)
+
+    # Dispatched before the generator config is built: reviewing wording has
+    # nothing to do with synthetic data, and the shared options would only
+    # invite the reader to think it did.
+    if args.command == "reason-codes":
+        return _reason_codes(args)
+
     config = replace(
         GeneratorConfig(),
         seed=args.seed,
@@ -97,6 +121,181 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "benchmark":
         return _benchmark(config, args)
     return _score(config, args)
+
+
+def _add_reason_code_actions(command: argparse.ArgumentParser) -> None:
+    """Wire the four things an analyst does with reason wording.
+
+    There is no bulk accept. Reviewing a wording means reading the sentence,
+    and a switch that accepted fifty at once would produce a ledger certifying
+    nothing while reading as complete.
+    """
+    shared = argparse.ArgumentParser(add_help=False)
+    shared.add_argument(
+        "--file",
+        type=Path,
+        default=REVIEW_FILE,
+        help="ledger to read and write (defaults to the one beside the code)",
+    )
+
+    actions = command.add_subparsers(dest="reason_action", required=True)
+
+    listing = actions.add_parser(
+        "list", parents=[shared], help="every code, with its review state"
+    )
+    listing.add_argument(
+        "--status",
+        choices=("unreviewed", "validated", "rejected", "all"),
+        default="unreviewed",
+        help="which codes to show (default: the ones nobody has read)",
+    )
+
+    show = actions.add_parser(
+        "show", parents=[shared], help="one code in full, as it will be read"
+    )
+    show.add_argument("code")
+
+    for name, help_text in (
+        ("accept", "record that the wording reads as an observation"),
+        ("reject", "record that the wording is misleading, and why"),
+    ):
+        decision = actions.add_parser(name, parents=[shared], help=help_text)
+        decision.add_argument("code")
+        decision.add_argument(
+            "--reviewer",
+            required=True,
+            help="who read it; a decision nobody is answerable for is not a review",
+        )
+        decision.add_argument(
+            "--note",
+            required=True,
+            help="what was checked, or what was wrong with it",
+        )
+
+    actions.add_parser(
+        "coverage",
+        parents=[shared],
+        help="how much of the catalogue anybody has read (non-zero when short)",
+    )
+
+
+def _reason_codes(args) -> int:
+    if args.reason_action == "list":
+        return _list_reason_codes(args)
+    if args.reason_action == "show":
+        return _show_reason_code(args)
+    if args.reason_action == "coverage":
+        return _reason_code_coverage(args)
+    return _record_reason_code_decision(args)
+
+
+def _ledger(path: Path) -> ReviewLedger:
+    loaded = ReviewLedger.load(path)
+    return loaded if loaded is not None else ReviewLedger()
+
+
+def _list_reason_codes(args) -> int:
+    ledger = _ledger(args.file)
+    width = max(len(entry.code) for entry in catalogue())
+    shown = 0
+    for entry in catalogue():
+        status = ledger.status_of(entry.code)
+        if args.status != "all" and status.value != args.status:
+            continue
+        shown += 1
+        lanes = "/".join(str(lane) for lane in entry.lanes)
+        print(f"  {entry.code:<{width}}  {status.value:<10}  {lanes:<10}  {entry.observation}")
+    if not shown:
+        print(f"  no code is {args.status}")
+    print(f"\n{ledger.coverage().describe()}")
+    return 0
+
+
+def _show_reason_code(args) -> int:
+    entry = entry_for(args.code)
+    if entry is None:
+        print(
+            f"{args.code} is not a code this system emits; `reason-codes list "
+            f"--status all` shows the ones it does",
+            file=sys.stderr,
+        )
+        return 1
+
+    ledger = _ledger(args.file)
+    print(f"{entry.code}")
+    print(f"  lane      {'/'.join(str(lane) for lane in entry.lanes)}")
+    print(f"  from      {entry.source}")
+    print(f"  states    {entry.observation}")
+    print(f"  review    {ledger.status_of(entry.code)}")
+    decision = ledger.decision_for(entry.code)
+    if decision:
+        print(f"            by {decision.reviewer} on {decision.reviewed_at.isoformat()}")
+        print(f"            {decision.note}")
+    print("\n  wording as an analyst reads it:")
+    for statement in entry.statements:
+        print(f"    {statement}")
+    defects = wording_defects(entry)
+    if defects:
+        print("\n  machine-checkable problems:")
+        for defect in defects:
+            print(f"    {defect}")
+    return 0
+
+
+def _record_reason_code_decision(args) -> int:
+    """Write one decision, or refuse and say why.
+
+    The reviewer and the note are required by the parser rather than prompted
+    for, so a decision cannot be recorded by pressing return past a question.
+    """
+    try:
+        if entry_for(args.code) is None:
+            raise ReviewRefused(
+                f"{args.code} is not a code this system emits; a review of "
+                f"wording nobody will ever see is not coverage of anything"
+            )
+        decision = ReviewDecision(
+            code=args.code,
+            status=(
+                ReviewStatus.VALIDATED
+                if args.reason_action == "accept"
+                else ReviewStatus.REJECTED
+            ),
+            reviewer=args.reviewer,
+            reviewed_at=now(),
+            note=args.note,
+        )
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 1
+
+    ledger = _ledger(args.file).record(decision)
+    ledger.save(args.file)
+    # The next read in this process must see what was just written.
+    default_ledger.cache_clear()
+
+    print(f"{decision.code} recorded as {decision.status} by {decision.reviewer}")
+    print(f"wrote {args.file}")
+    print(f"\n{ledger.coverage().describe()}")
+    print(
+        "\nCommit the ledger. A review that exists only on the machine it was "
+        "taken on is not a record anybody else can read."
+    )
+    return 0
+
+
+def _reason_code_coverage(args) -> int:
+    coverage = _ledger(args.file).coverage()
+    print(coverage.describe())
+    if coverage.complete is True:
+        return 0
+    print(
+        "\nA reason is what an analyst acts on and what a subject is shown. "
+        "One nobody has read is not an explanation this system can stand "
+        "behind, and promotion gate G10 blocks on it.",
+        file=sys.stderr,
+    )
+    return 1
 
 
 def _benchmark(config: GeneratorConfig, args) -> int:

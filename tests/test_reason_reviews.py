@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
+from cakradana.cli import main
 from cakradana.scoring.catalogue import codes
 from cakradana.scoring.result import ReviewStatus
 from cakradana.scoring.review import (
@@ -190,3 +191,168 @@ class TestWhatIsShipped:
         assert coverage.rejected == ()
         assert len(coverage.unreviewed) == coverage.total
         assert coverage.complete is False
+
+
+class TestTheCommandAnAnalystRuns:
+    """`cakradana reason-codes …`.
+
+    The mechanism is only worth having if a person can actually use it, so what
+    is asserted here is the round trip: read the wording, record a decision on
+    it, and see the coverage move.
+    """
+
+    def test_listing_shows_what_nobody_has_read(self, capsys, tmp_path):
+        assert main(["reason-codes", "list", "--file", str(tmp_path / "r.yaml")]) == 0
+        out = capsys.readouterr().out
+        assert "FAN_IN_BURST" in out
+        assert "unreviewed" in out
+
+    def test_showing_a_code_prints_the_wording_under_review(self, capsys, tmp_path):
+        assert (
+            main(
+                [
+                    "reason-codes",
+                    "show",
+                    "FAN_IN_BURST",
+                    "--file",
+                    str(tmp_path / "r.yaml"),
+                ]
+            )
+            == 0
+        )
+        out = capsys.readouterr().out
+        assert "distinct senders" in out
+        assert "RULE-T2-01" in out
+
+    def test_showing_a_code_that_does_not_exist_fails(self, capsys, tmp_path):
+        assert (
+            main(
+                ["reason-codes", "show", "NOPE", "--file", str(tmp_path / "r.yaml")]
+            )
+            == 1
+        )
+
+    def test_accepting_records_the_reviewer_and_persists_it(self, capsys, tmp_path):
+        path = tmp_path / "r.yaml"
+        assert (
+            main(
+                [
+                    "reason-codes",
+                    "accept",
+                    "FAN_IN_BURST",
+                    "--reviewer",
+                    "analis@example.org",
+                    "--note",
+                    "reads as an observation",
+                    "--file",
+                    str(path),
+                ]
+            )
+            == 0
+        )
+        capsys.readouterr()
+        stored = ReviewLedger.load(path)
+        assert stored.status_of("FAN_IN_BURST") is ReviewStatus.VALIDATED
+        assert stored.decision_for("FAN_IN_BURST").reviewer == "analis@example.org"
+
+    def test_rejecting_records_the_defect(self, tmp_path, capsys):
+        path = tmp_path / "r.yaml"
+        main(
+            [
+                "reason-codes",
+                "reject",
+                "ADVERSE_COVERAGE",
+                "--reviewer",
+                "analis@example.org",
+                "--note",
+                "a reader stops at the first clause and takes it as a finding",
+                "--file",
+                str(path),
+            ]
+        )
+        capsys.readouterr()
+        decision = ReviewLedger.load(path).decision_for("ADVERSE_COVERAGE")
+        assert decision.status is ReviewStatus.REJECTED
+        assert "first clause" in decision.note
+
+    def test_a_decision_about_a_code_that_is_never_emitted_is_refused(
+        self, tmp_path, capsys
+    ):
+        path = tmp_path / "r.yaml"
+        assert (
+            main(
+                [
+                    "reason-codes",
+                    "accept",
+                    "INVENTED_CODE",
+                    "--reviewer",
+                    "analis@example.org",
+                    "--note",
+                    "looks fine",
+                    "--file",
+                    str(path),
+                ]
+            )
+            == 1
+        )
+        assert "not a code this system emits" in capsys.readouterr().err
+        assert not path.exists()
+
+    def test_a_decision_with_an_empty_note_is_refused(self, tmp_path, capsys):
+        assert (
+            main(
+                [
+                    "reason-codes",
+                    "accept",
+                    "FAN_IN_BURST",
+                    "--reviewer",
+                    "analis@example.org",
+                    "--note",
+                    "  ",
+                    "--file",
+                    str(tmp_path / "r.yaml"),
+                ]
+            )
+            == 1
+        )
+        assert "records no note" in capsys.readouterr().err
+
+    def test_a_decision_needs_a_reviewer_on_the_command_line(self, tmp_path):
+        """Not prompted for, so it cannot be got past by pressing return."""
+        with pytest.raises(SystemExit):
+            main(
+                [
+                    "reason-codes",
+                    "accept",
+                    "FAN_IN_BURST",
+                    "--note",
+                    "reads as an observation",
+                    "--file",
+                    str(tmp_path / "r.yaml"),
+                ]
+            )
+
+    def test_coverage_is_non_zero_while_anything_is_unread(self, tmp_path, capsys):
+        assert (
+            main(["reason-codes", "coverage", "--file", str(tmp_path / "r.yaml")]) == 1
+        )
+        assert "0 of" in capsys.readouterr().out
+
+    def test_coverage_moves_when_a_decision_is_recorded(self, tmp_path, capsys):
+        path = tmp_path / "r.yaml"
+        main(
+            [
+                "reason-codes",
+                "accept",
+                "FAN_IN_BURST",
+                "--reviewer",
+                "analis@example.org",
+                "--note",
+                "reads as an observation",
+                "--file",
+                str(path),
+            ]
+        )
+        capsys.readouterr()
+        main(["reason-codes", "coverage", "--file", str(path)])
+        assert "1 of" in capsys.readouterr().out
