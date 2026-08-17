@@ -1,6 +1,24 @@
 # Published rule set. Immutable once released: a change creates a new version
 # so that historical scores stay explicable by the rules that produced them.
 #
+# What that covers, stated because it was read too widely once. It binds
+# anything that decides an outcome — a threshold, a test, an applicability
+# condition, a legal citation, an effective date, a weight, whether a rule is
+# active. Change one of those and a donation judged yesterday would be judged
+# differently today, so the old judgement needs the old version to remain
+# readable.
+#
+# It does not bind `reason_template`, which is the sentence attached to an
+# outcome rather than any part of reaching it. Correcting one leaves every
+# verdict this set has ever issued exactly as it was. A template found
+# misleading is corrected in place instead, because the alternative is to keep
+# showing a misleading explanation for existing scores until some unrelated
+# change happens to warrant a release — and a wording nobody stands behind is
+# not made better by being preserved. Wording carries its own audit trail: the
+# review ledger records the exact sentence each decision was taken on and
+# returns a code to unreviewed when it changes, so an amendment cannot pass
+# itself off as already read.
+#
 # No Tier-1 rule in this set carries `verified_by`. The thresholds and article
 # references below are drawn from project source documents and are consistent
 # across them, but consistency is not verification. Until a qualified reviewer

@@ -3,6 +3,15 @@
 Rule sets are immutable once published. A change produces a new version rather
 than an edit, so that a score recorded last year can still be explained by the
 rules that produced it.
+
+That binds everything a verdict depends on: thresholds, tests, applicability,
+citations, effective dates, weights, and whether a rule runs at all. It does
+not bind ``reason_template``, which is the sentence attached to an outcome and
+not part of reaching one — correcting a misleading one changes no verdict this
+set has ever issued, and preserving it would only keep the misleading sentence
+in front of readers. Amended wording is tracked by the review ledger, which
+records the exact sentence each decision was taken on and returns a code to
+unreviewed when it changes.
 """
 
 from __future__ import annotations
