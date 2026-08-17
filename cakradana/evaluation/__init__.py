@@ -12,6 +12,16 @@ from cakradana.evaluation.metrics import (
     recall_at_budget,
     select_threshold,
 )
+from cakradana.evaluation.sampling import (
+    AuditDraw,
+    AuditFinding,
+    AuditSampler,
+    RecallEstimate,
+    SamplingBias,
+    estimate_recall,
+    propensity_weights,
+    wilson_interval,
+)
 from cakradana.evaluation.splits import (
     LeakageError,
     Split,
@@ -21,9 +31,17 @@ from cakradana.evaluation.splits import (
 )
 
 __all__ = [
+    "AuditDraw",
+    "AuditFinding",
+    "AuditSampler",
     "BudgetMetrics",
     "CalibrationReport",
     "LeakageError",
+    "RecallEstimate",
+    "SamplingBias",
+    "estimate_recall",
+    "propensity_weights",
+    "wilson_interval",
     "Scored",
     "Split",
     "SplitSet",
