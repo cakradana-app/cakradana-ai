@@ -10,6 +10,7 @@ reporting healthy-looking scores throughout.
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import date, timedelta
 
 import pytest
 
@@ -184,3 +185,57 @@ class TestReproducibility:
         assert dataset.manifest["generator_version"] == GENERATOR_VERSION
         assert dataset.manifest["seed"] == SMALL.seed
         assert set(dataset.manifest["typology_counts"]) == set(ALL_TYPOLOGIES)
+
+
+class TestRetirement:
+    """Synthetic data does not age on its own, which is why it is stamped.
+
+    A generated file neither expires nor contradicts itself, so it survives in
+    a directory, gets copied, and is eventually cited by somebody who has
+    forgotten where it came from.
+    """
+
+    def test_the_manifest_says_the_data_is_synthetic_before_anything_else(self):
+        dataset = generate(SMALL)
+        assert next(iter(dataset.manifest)) == "synthetic"
+        assert dataset.manifest["synthetic"] is True
+
+    def test_a_generated_dataset_carries_its_retirement_date(self):
+        dataset = generate(replace(SMALL, generated_on=date(2026, 1, 1)))
+        assert dataset.generated_on == date(2026, 1, 1)
+        assert dataset.retire_on == date(2026, 1, 1) + timedelta(
+            days=SMALL.retire_after_days
+        )
+
+    def test_a_fresh_dataset_is_not_retired(self):
+        dataset = generate(replace(SMALL, generated_on=date(2026, 1, 1)))
+        assert dataset.is_retired(date(2026, 3, 1)) is False
+
+    def test_a_dataset_past_its_date_is_retired(self):
+        dataset = generate(replace(SMALL, generated_on=date(2026, 1, 1)))
+        assert dataset.is_retired(date(2027, 1, 1)) is True
+
+    def test_the_boundary_day_counts_as_retired(self):
+        """Fit "until" the date, not through it."""
+        dataset = generate(replace(SMALL, generated_on=date(2026, 1, 1)))
+        assert dataset.is_retired(dataset.retire_on) is True
+
+    def test_the_notice_states_the_date_while_the_data_is_still_fit(self):
+        """The reader who needs to know it expired is usually holding a copy
+        made before it did."""
+        dataset = generate(replace(SMALL, generated_on=date(2026, 1, 1)))
+        notice = dataset.retirement_notice(date(2026, 2, 1))
+        assert "fit to use until" in notice
+        assert "no real donation" in notice
+
+    def test_the_notice_says_what_to_do_once_it_has_expired(self):
+        dataset = generate(replace(SMALL, generated_on=date(2026, 1, 1)))
+        notice = dataset.retirement_notice(date(2027, 1, 1))
+        assert "regenerate" in notice
+        assert str(dataset.retire_on) in notice
+
+    def test_the_retirement_window_is_configurable(self):
+        dataset = generate(
+            replace(SMALL, generated_on=date(2026, 1, 1), retire_after_days=30)
+        )
+        assert dataset.retire_on == date(2026, 1, 31)

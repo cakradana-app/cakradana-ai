@@ -141,6 +141,16 @@ class GeneratorConfig:
         (T_SELF_FUNDED, 0.06),
         (T_UNREPORTED, 0.06),
     )
+    #: The day this dataset was built. Defaults to today; supplied explicitly
+    #: when a run needs to be reproduced exactly.
+    generated_on: date | None = None
+    #: How long a generated dataset stays fit to use. Synthetic data has no
+    #: expiry of its own — it neither ages nor contradicts itself — which is
+    #: the problem: a file that looks fine indefinitely gets kept, copied, and
+    #: eventually cited. The date is stamped so that a dataset outliving the
+    #: rule set, the feature definitions, or the generator that produced it
+    #: says so instead of being taken at face value.
+    retire_after_days: int = 180
     #: Share of lawful donations that a recipient omits from its filed return.
     #: Reporting failures are not confined to donations that are otherwise
     #: irregular, and generating them only alongside other patterns would make
@@ -166,6 +176,39 @@ class SyntheticDataset:
 
     def __len__(self) -> int:
         return len(self.donations)
+
+    @property
+    def generated_on(self) -> date:
+        return date.fromisoformat(str(self.manifest["generated_on"]))
+
+    @property
+    def retire_on(self) -> date:
+        return date.fromisoformat(str(self.manifest["retire_on"]))
+
+    def is_retired(self, today: date | None = None) -> bool:
+        return (today or date.today()) >= self.retire_on
+
+    def retirement_notice(self, today: date | None = None) -> str:
+        """What to say about this dataset's age, whichever side of it we are on.
+
+        Stated in both directions deliberately. A dataset that is still fit to
+        use should carry the date anyway, because the reader who needs to know
+        it has expired is usually reading a copy made before it did.
+        """
+        today = today or date.today()
+        remaining = (self.retire_on - today).days
+        if remaining > 0:
+            return (
+                f"synthetic data generated {self.generated_on}, fit to use until "
+                f"{self.retire_on} ({remaining} days); it describes patterns that "
+                f"were planted for it and no real donation"
+            )
+        return (
+            f"synthetic data generated {self.generated_on} and retired on "
+            f"{self.retire_on}, {-remaining} days ago; regenerate rather than "
+            f"reusing it — the rule set, the feature definitions, or the "
+            f"generator may all have moved since"
+        )
 
     @property
     def risky_ids(self) -> set[str]:
@@ -403,8 +446,15 @@ def generate(config: GeneratorConfig | None = None) -> SyntheticDataset:
     )
 
     builder.donations.sort(key=lambda d: d.occurred_at)
+    generated_on = config.generated_on or date.today()
     manifest = {
+        # First key by name, and asserted by a test: anything reading this
+        # manifest learns what the data is before it learns anything about it.
+        "synthetic": True,
         "generator_version": GENERATOR_VERSION,
+        "generated_on": str(generated_on),
+        "retire_on": str(generated_on + timedelta(days=config.retire_after_days)),
+        "retire_after_days": config.retire_after_days,
         "seed": config.seed,
         "donations": len(builder.donations),
         "entities": len(builder.entities),

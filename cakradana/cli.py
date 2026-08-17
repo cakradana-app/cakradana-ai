@@ -85,6 +85,8 @@ def _generate(config: GeneratorConfig, out: Path | None) -> int:
     dataset = generate(config)
     print(json.dumps(dataset.manifest, indent=2))
     print()
+    print(dataset.retirement_notice())
+    print()
     for result in check(dataset):
         print("  " + result.describe())
 
@@ -133,6 +135,12 @@ def _context(config: GeneratorConfig):
 
 def _train(config: GeneratorConfig, args) -> int:
     dataset, store, engine, features = _context(config)
+    if dataset.is_retired():
+        # Refused rather than warned about. A model trained on data that has
+        # outlived the rule set it was generated under carries metrics nobody
+        # can attribute, and the metrics are what get quoted.
+        print(f"\n{dataset.retirement_notice()}", file=sys.stderr)
+        return 1
     result = train(
         store,
         engine,
