@@ -23,7 +23,7 @@ from cakradana.governance.promotion import (
     promote,
     promoted_versions,
 )
-from cakradana.scoring.catalogue import codes
+from cakradana.scoring.catalogue import entry_for, stateable_codes
 from cakradana.scoring.result import ReviewStatus
 from cakradana.scoring.review import ReviewDecision, ReviewLedger
 from cakradana.training.registry import Artifact, ArtifactError
@@ -95,8 +95,9 @@ def fully_reviewed() -> ReviewLedger:
             reviewer="analis@example.org",
             reviewed_at=datetime(2026, 8, 17, tzinfo=timezone.utc),
             note="reads as an observation",
+            statements=entry_for(code).statements,
         )
-        for code in codes()
+        for code in stateable_codes()
     )
 
 
@@ -406,6 +407,7 @@ class TestReasonWordingGate:
                     reviewer="analis@example.org",
                     reviewed_at=datetime(2026, 8, 18, tzinfo=timezone.utc),
                     note="names the lane but not what the reader should do next",
+                    statements=entry_for("LANE_UNAVAILABLE").statements,
                 ),
             ]
         )

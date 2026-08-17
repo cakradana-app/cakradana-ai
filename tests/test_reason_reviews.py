@@ -15,7 +15,7 @@ import pytest
 from pydantic import ValidationError
 
 from cakradana.cli import main
-from cakradana.scoring.catalogue import catalogue, stateable_codes
+from cakradana.scoring.catalogue import catalogue, entry_for, stateable_codes
 from cakradana.scoring.result import ReviewStatus
 from cakradana.scoring.review import (
     REVIEW_FILE,
@@ -29,12 +29,15 @@ CODE = "FAN_IN_BURST"
 
 
 def decision(**overrides) -> ReviewDecision:
+    code = overrides.get("code", CODE)
+    entry = entry_for(code)
     defaults = {
-        "code": CODE,
+        "code": code,
         "status": ReviewStatus.VALIDATED,
         "reviewer": "analis@example.org",
         "reviewed_at": WHEN,
         "note": "reads as an observation an analyst can check against the ledger",
+        "statements": entry.statements if entry else ("some wording",),
     }
     return ReviewDecision(**{**defaults, **overrides})
 
@@ -170,7 +173,8 @@ class TestPersistence:
             "    status: validated\n"
             "    reviewer: ''\n"
             "    reviewed_at: '2026-08-17T09:00:00+00:00'\n"
-            "    note: accepted\n",
+            "    note: accepted\n"
+            "    statements: ['some wording']\n",
             encoding="utf-8",
         )
         with pytest.raises(ValidationError, match="names no reviewer"):
@@ -365,3 +369,80 @@ class TestTheCommandAnAnalystRuns:
         capsys.readouterr()
         main(["reason-codes", "coverage", "--file", str(path)])
         assert "1 of" in capsys.readouterr().out
+
+
+class TestAReviewIsOfASentence:
+    """An acceptance does not survive the wording it accepted being changed.
+
+    A reviewer reads a sentence, not a code. Carrying their decision across to
+    a sentence they never saw would report a review of the current wording that
+    nobody performed — which is the failure the ledger exists to prevent, with
+    the reviewer's own name attached to it.
+    """
+
+    def test_a_decision_records_the_wording_that_was_read(self):
+        assert decision().statements == entry_for(CODE).statements
+
+    def test_a_decision_that_records_no_wording_is_refused(self):
+        with pytest.raises(ValidationError, match="records no wording"):
+            decision(statements=())
+
+    def test_amending_the_wording_puts_the_code_back_in_the_queue(self):
+        ledger = ReviewLedger([decision(statements=("an older sentence.",))])
+        assert ledger.status_of(CODE) is ReviewStatus.UNREVIEWED
+
+    def test_the_unchanged_wording_keeps_its_decision(self):
+        assert ReviewLedger([decision()]).status_of(CODE) is ReviewStatus.VALIDATED
+
+    def test_a_superseded_wording_is_named_apart_from_one_never_read(self):
+        """The work needed differs: somebody has to look at what changed,
+        not at the code for the first time."""
+        ledger = ReviewLedger([decision(statements=("an older sentence.",))])
+        coverage = ledger.coverage([CODE, "AMOUNT"])
+        assert coverage.superseded == (CODE,)
+        assert CODE in coverage.unreviewed
+        assert "since changed" in coverage.describe()
+        assert coverage.complete is False
+
+    def test_a_rejection_of_wording_since_amended_does_not_block_forever(self):
+        """A rejected sentence that was then rewritten is a different sentence,
+        and blocking on the old finding would make the fix invisible."""
+        ledger = ReviewLedger(
+            [
+                decision(
+                    status=ReviewStatus.REJECTED,
+                    statements=("an older sentence.",),
+                    note="the comparison figure is a placeholder",
+                )
+            ]
+        )
+        assert ledger.status_of(CODE) is ReviewStatus.UNREVIEWED
+        assert ledger.coverage([CODE]).rejected == ()
+
+    def test_the_recorded_wording_survives_a_round_trip(self, tmp_path):
+        path = tmp_path / "r.yaml"
+        ReviewLedger([decision()]).save(path)
+        assert ReviewLedger.load(path).decision_for(CODE).statements == (
+            entry_for(CODE).statements
+        )
+        assert ReviewLedger.load(path).status_of(CODE) is ReviewStatus.VALIDATED
+
+    def test_the_command_records_the_wording_it_showed(self, tmp_path, capsys):
+        path = tmp_path / "r.yaml"
+        main(
+            [
+                "reason-codes",
+                "accept",
+                CODE,
+                "--reviewer",
+                "analis@example.org",
+                "--note",
+                "reads as an observation",
+                "--file",
+                str(path),
+            ]
+        )
+        capsys.readouterr()
+        stored = ReviewLedger.load(path)
+        assert stored.decision_for(CODE).statements == entry_for(CODE).statements
+        assert stored.status_of(CODE) is ReviewStatus.VALIDATED

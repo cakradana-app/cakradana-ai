@@ -28,7 +28,7 @@ from typing import Iterable, Sequence
 import yaml
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from cakradana.scoring.catalogue import stateable_codes
+from cakradana.scoring.catalogue import entry_for, stateable_codes
 from cakradana.scoring.result import ReviewStatus
 
 #: Reviews live beside the wording they are about, so that a change to a
@@ -57,6 +57,10 @@ class ReviewDecision(BaseModel):
     #: What they concluded. For a rejection this is the defect; for an
     #: acceptance it is what they checked.
     note: str
+    #: The exact wording they read. A review is of a sentence, not of a code,
+    #: and a decision that does not record which sentence cannot be checked
+    #: against the one the system says now.
+    statements: tuple[str, ...]
 
     @model_validator(mode="after")
     def _accountable(self) -> ReviewDecision:
@@ -81,6 +85,12 @@ class ReviewDecision(BaseModel):
                 f"the review of {self.code} carries a timestamp with no "
                 f"timezone; when a decision was taken has to be unambiguous"
             )
+        if not any(statement.strip() for statement in self.statements):
+            raise ValueError(
+                f"the review of {self.code} records no wording; without the "
+                f"sentence the reviewer read there is no way to tell later "
+                f"whether they read the one the system still says"
+            )
         return self
 
 
@@ -96,6 +106,11 @@ class ReviewCoverage:
     #: than dropped: a review of wording that no longer exists is not coverage,
     #: and silently counting it would inflate the figure that gates promotion.
     stale: tuple[str, ...] = ()
+    #: Codes somebody reviewed under wording that has since been amended. They
+    #: count as unreviewed, and are named apart from the never-read ones
+    #: because the work needed is different: somebody has to look at what
+    #: changed, not at the code for the first time.
+    superseded: tuple[str, ...] = ()
 
     @property
     def complete(self) -> bool | None:
@@ -119,10 +134,16 @@ class ReviewCoverage:
                 f"{len(self.rejected)} found misleading and still emitted "
                 f"({', '.join(self.rejected)})"
             )
-        if self.unreviewed:
-            shown = ", ".join(self.unreviewed[:5])
-            more = "" if len(self.unreviewed) <= 5 else ", …"
-            parts.append(f"{len(self.unreviewed)} never read ({shown}{more})")
+        never_read = tuple(c for c in self.unreviewed if c not in self.superseded)
+        if never_read:
+            shown = ", ".join(never_read[:5])
+            more = "" if len(never_read) <= 5 else ", …"
+            parts.append(f"{len(never_read)} never read ({shown}{more})")
+        if self.superseded:
+            parts.append(
+                f"{len(self.superseded)} reviewed under wording that has since "
+                f"changed ({', '.join(self.superseded)})"
+            )
         if self.stale:
             parts.append(
                 f"{len(self.stale)} decision(s) about codes no longer emitted "
@@ -165,8 +186,28 @@ class ReviewLedger:
         return self._latest.get(code)
 
     def status_of(self, code: str) -> ReviewStatus:
+        """What a code's wording stands at, as the system words it now.
+
+        A decision taken on wording that has since been amended reads
+        unreviewed again. The reviewer accepted a sentence, not a code, and
+        carrying their acceptance across to a sentence they never saw would
+        report a review of the current wording that nobody performed.
+
+        A code the catalogue no longer declares keeps its recorded status.
+        There is no current wording to compare against, and ``coverage``
+        reports the decision as stale rather than counting it.
+        """
         decision = self._latest.get(code)
-        return decision.status if decision else ReviewStatus.UNREVIEWED
+        if decision is None:
+            return ReviewStatus.UNREVIEWED
+        if self._wording_moved_on(decision):
+            return ReviewStatus.UNREVIEWED
+        return decision.status
+
+    @staticmethod
+    def _wording_moved_on(decision: ReviewDecision) -> bool:
+        entry = entry_for(decision.code)
+        return entry is not None and entry.statements != decision.statements
 
     def statuses(self, over: Sequence[str] | None = None) -> dict[str, ReviewStatus]:
         declared = tuple(over) if over is not None else stateable_codes()
@@ -190,6 +231,11 @@ class ReviewLedger:
                 c for c in declared if statuses[c] is ReviewStatus.UNREVIEWED
             ),
             stale=tuple(sorted(set(self._latest) - set(declared))),
+            superseded=tuple(
+                c
+                for c in declared
+                if c in self._latest and self._wording_moved_on(self._latest[c])
+            ),
         )
 
     # -- persistence ------------------------------------------------------
@@ -221,6 +267,7 @@ class ReviewLedger:
                     "reviewer": d.reviewer,
                     "reviewed_at": d.reviewed_at.isoformat(),
                     "note": d.note,
+                    "statements": list(d.statements),
                 }
                 for d in self._decisions
             ],

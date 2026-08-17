@@ -290,6 +290,9 @@ def _record_reason_code_decision(args) -> int:
             reviewer=args.reviewer,
             reviewed_at=now(),
             note=args.note,
+            # The sentence as it stands now, so a later amendment to it puts
+            # the code back in the queue instead of inheriting this decision.
+            statements=entry.statements,
         )
     except ValueError as error:
         print(str(error), file=sys.stderr)
