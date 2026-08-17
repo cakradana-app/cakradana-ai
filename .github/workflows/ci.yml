@@ -87,3 +87,11 @@ jobs:
       # trains a model on noise, and nothing else detects that.
       - name: Synthetic data acceptance
         run: cakradana generate --donations 2000
+
+      # The wall-clock figures belong to the runner and are printed rather than
+      # asserted; a millisecond threshold tuned on one machine gets raised
+      # until it stops failing, at which point it measures nothing. What is
+      # asserted is the scaling property, which is a fact about the code: a
+      # system whose cost tracks its history gets slower as it succeeds.
+      - name: Scoring latency and scaling
+        run: cakradana benchmark --donations 500 --samples 40

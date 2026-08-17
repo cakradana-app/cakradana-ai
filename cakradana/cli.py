@@ -1,11 +1,12 @@
 """Command line entry points.
 
-Three commands, each corresponding to a step that used to be a loose script or
+Four commands, each corresponding to a step that used to be a loose script or
 a notebook cell:
 
     generate   build a synthetic dataset and verify it contains its typologies
     train      fit a model, measure it, and say whether it is worth shipping
     score      score a dataset with the current rules and report what fired
+    benchmark  measure scoring latency, and whether cost grows with history
 
 The commands share the library the service uses. Nothing here computes a
 feature, applies a rule, or decides a threshold on its own — the previous
@@ -23,10 +24,12 @@ from dataclasses import replace
 from pathlib import Path
 
 from cakradana.data import GeneratorConfig, assert_acceptable, check, generate
+from cakradana.evaluation.timing import ScalingReport, measure
 from cakradana.features import FeatureService
 from cakradana.history import InMemoryDonationStore
 from cakradana.rules import RuleEngine, load_latest
 from cakradana.training import TrainingConfig, train
+from cakradana.serving.service import ScoringService
 from cakradana.training.registry import save
 
 
@@ -66,6 +69,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     score_cmd.add_argument("--limit", type=int, default=0)
 
+    benchmark_cmd = sub.add_parser(
+        "benchmark",
+        parents=[common],
+        help="measure scoring latency and how it scales with history",
+    )
+    benchmark_cmd.add_argument("--samples", type=int, default=60)
+    benchmark_cmd.add_argument(
+        "--factor",
+        type=int,
+        default=4,
+        help="how much larger the second population is, for the scaling reading",
+    )
+
     args = parser.parse_args(argv)
     config = replace(
         GeneratorConfig(),
@@ -78,7 +94,66 @@ def main(argv: list[str] | None = None) -> int:
         return _generate(config, args.out)
     if args.command == "train":
         return _train(config, args)
+    if args.command == "benchmark":
+        return _benchmark(config, args)
     return _score(config, args)
+
+
+def _benchmark(config: GeneratorConfig, args) -> int:
+    """Take a latency reading on this machine.
+
+    The wall-clock figures belong to whatever runs them, which is exactly why
+    this exists as a command rather than as a number in a document: the target
+    is only meaningful against a reading somebody actually took, on the hardware
+    the system is going to run on.
+
+    The scaling ratio is the part that travels. It is a property of the code,
+    so a sub-linear result here means the same thing anywhere.
+    """
+    small = _timed(config, args.donations, args.samples)
+    large = _timed(config, args.donations * args.factor, args.samples)
+    report = ScalingReport("score", small, large)
+    print(report.describe())
+    if report.is_sublinear is None:
+        print("\nscaling could not be measured", file=sys.stderr)
+        return 1
+    if not report.is_sublinear:
+        # Reported as a failure rather than a note. A system whose cost tracks
+        # its history gets slower as it succeeds, and production is where that
+        # is otherwise discovered.
+        print("\nscoring cost grows with history", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _timed(config: GeneratorConfig, donations: int, samples: int):
+    # The donor pool grows with the population. Holding it fixed would make a
+    # larger dataset mean the same donors giving more often, which is a
+    # different shape of history and not the one being scaled.
+    scale = max(donations / max(config.n_background_donations, 1), 1.0)
+    dataset, store, engine, features = _context(
+        replace(
+            config,
+            n_background_donations=donations,
+            n_legitimate_donors=max(20, int(config.n_legitimate_donors * scale)),
+        )
+    )
+    service = ScoringService(
+        calendar=dataset.calendar,
+        registers=dataset.registers,
+        entities=dataset.entities,
+        require_verified_citations=False,
+    )
+    service.replay(dataset.donations, entities=dataset.entities)
+
+    def call(index: int) -> object:
+        donation = dataset.donations[index % len(dataset.donations)]
+        # Not remembered: the history each call is judged against has to stay
+        # the size being measured rather than growing under the measurement.
+        view = service.store.knowable_at(donation.occurred_at)
+        return service.scorer.score(donation, view, entities=service.entities)
+
+    return measure("score", call, samples=samples, population=len(service.store))
 
 
 def _generate(config: GeneratorConfig, out: Path | None) -> int:
