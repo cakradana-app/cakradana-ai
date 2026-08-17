@@ -42,6 +42,10 @@ FeatureValue = float | int | bool | str | None
 #: coincidence often enough that a match means nothing.
 MIN_ROWS = 50
 
+#: Present observations a pair needs before an affine fit means anything. A fit
+#: verified on the same points that produced it is not a verification.
+MIN_PAIRS = 20
+
 #: Tolerance for the affine check. Tight enough that only an actual rescaling
 #: passes; loose enough to survive floating-point accumulation.
 AFFINE_TOLERANCE = 1e-9
@@ -128,7 +132,10 @@ def _affine(
             return None
         pairs.append((float(x), float(y)))
 
-    if len(pairs) < 2:
+    # Two points always determine a line, and the verification loop would then
+    # iterate over those same two points. Two mostly-null columns holding
+    # unrelated values in the same two rows were reported as a rescaled copy.
+    if len(pairs) < MIN_PAIRS:
         return None
 
     base_x, base_y = pairs[0]
@@ -198,11 +205,16 @@ def detect_redundancy(
     groups: dict[tuple, list[str]] = defaultdict(list)
     for name, values in varying.items():
         groups[tuple((type(v).__name__, v) for v in values)].append(name)
+    # Only the non-representative members are withheld from the affine pass.
+    # Dropping a whole identical group hid a rescaled copy of it: with a == b
+    # and c == 2a, both a and b left the numeric set and c had nothing to be
+    # compared against — the exact defect this module exists to catch, escaping
+    # because a different pair was caught first.
     duplicated: set[str] = set()
     for members in groups.values():
         if len(members) > 1:
             ordered = tuple(sorted(members))
-            duplicated.update(ordered)
+            duplicated.update(ordered[1:])
             findings.append(
                 Redundancy(
                     kind="identical",

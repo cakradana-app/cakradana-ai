@@ -25,6 +25,7 @@ the tail is what fills a review queue late, so the tail is what is reported.
 
 from __future__ import annotations
 
+import math
 import platform
 import time
 from dataclasses import dataclass
@@ -45,7 +46,10 @@ def percentile(values: Sequence[float], fraction: float) -> float:
     if not values:
         raise ValueError("no samples")
     ordered = sorted(values)
-    index = max(0, min(len(ordered) - 1, round(fraction * len(ordered)) - 1))
+    # ceil, not round. Python rounds half to even, which lands below the rank
+    # whenever the product's fractional part is at or under a half — always
+    # downward, so every reported tail figure came out optimistic.
+    index = max(0, min(len(ordered) - 1, math.ceil(fraction * len(ordered)) - 1))
     return ordered[index]
 
 
@@ -150,8 +154,16 @@ class ScalingReport:
     large: LatencyReport
 
     @property
-    def population_ratio(self) -> float:
-        return self.large.population / max(self.small.population, 1)
+    def population_ratio(self) -> float | None:
+        """How much larger the second population is.
+
+        None when the first is empty. Clamping the denominator to 1 made the
+        ratio the raw large population, so a fortyfold slowdown against an
+        empty baseline certified as sub-linear.
+        """
+        if self.small.population <= 0 or self.large.population <= 0:
+            return None
+        return self.large.population / self.small.population
 
     @property
     def cost_ratio(self) -> float | None:
@@ -176,17 +188,19 @@ class ScalingReport:
         a failure does and for a different reason.
         """
         ratio = self.cost_ratio
-        if ratio is None:
+        growth = self.population_ratio
+        if ratio is None or growth is None:
             return None
-        return ratio < self.population_ratio
+        return ratio < growth
 
     def describe(self) -> str:
         ratio = self.cost_ratio
-        if ratio is None:
+        growth = self.population_ratio
+        if ratio is None or growth is None:
             return f"{self.operation}: scaling not measurable"
         verdict = "sub-linear" if self.is_sublinear else "LINEAR OR WORSE"
         return (
-            f"{self.operation}: {self.population_ratio:.1f}x the history costs "
+            f"{self.operation}: {growth:.1f}x the history costs "
             f"{ratio:.2f}x the time — {verdict}\n"
             f"  {self.small.describe()}\n"
             f"  {self.large.describe()}"

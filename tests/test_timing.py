@@ -36,6 +36,15 @@ class TestPercentile:
     def test_the_median_sits_in_the_middle(self):
         assert percentile([1.0, 2.0, 3.0], 0.5) == 2.0
 
+    def test_the_rank_is_the_ceiling_not_the_nearest_even(self):
+        """n=3 passes under both `round` and `ceil`, which is why the defect
+        survived: Python rounds half to even, landing below the rank whenever
+        the product's fractional part is at or under a half. Every deviation
+        was downward, so every reported tail figure was optimistic."""
+        assert percentile([1.0, 2.0, 3.0, 4.0, 5.0], 0.5) == 3.0
+        thirty = [float(i) for i in range(1, 31)]
+        assert percentile(thirty, 0.95) == 29.0
+
     def test_the_top_percentile_is_the_worst_case(self):
         assert percentile([1.0, 2.0, 3.0, 99.0], 1.0) == 99.0
 
@@ -65,6 +74,16 @@ class TestMeasure:
     def test_the_percentiles_are_ordered(self):
         report = measure("noop", lambda i: sum(range(i * 50)), samples=60, population=1)
         assert report.p50_ms <= report.p95_ms <= report.p99_ms <= report.max_ms
+
+    def test_the_tail_reflects_a_slow_call_rather_than_absorbing_it(self):
+        """Ordering alone holds for any monotone index function, including a
+        wrong one. What has to hold is that one slow call moves the tail and
+        leaves the median where it was — the reason a mean is not reported."""
+        def occasionally_slow(index: int) -> object:
+            return sum(range(400_000)) if index % 20 == 19 else None
+
+        report = measure("noop", occasionally_slow, samples=60, population=1, warmup=0)
+        assert report.p99_ms > report.p50_ms * 5
 
 
 class TestScalingArithmetic:
@@ -110,6 +129,16 @@ class TestScalingArithmetic:
         scaling = ScalingReport("score", unmeasured, self.report(40.0, 2000))
         assert scaling.cost_ratio is None
         assert scaling.is_sublinear is None
+
+    def test_an_empty_baseline_population_yields_no_verdict(self):
+        """Clamping the denominator to 1 made the ratio the raw large
+        population, so a fortyfold slowdown certified as sub-linear."""
+        scaling = ScalingReport(
+            "score", self.report(10.0, 0), self.report(400.0, 2000)
+        )
+        assert scaling.population_ratio is None
+        assert scaling.is_sublinear is None
+        assert "not measurable" in scaling.describe()
 
     def test_a_baseline_too_small_to_time_yields_no_ratio(self):
         """A ratio against a figure that did not register is not a

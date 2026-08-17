@@ -248,8 +248,12 @@ class TestDegradedLanes:
     def test_the_score_is_still_produced(self, behavioural):
         """A partial answer beats none: the rules and the graph lane have
         results whether or not a model was ever trained."""
-        assert behavioural["score"] >= 0
-        assert any(lane["available"] for lane in behavioural["lanes"])
+        # Not `score >= 0`, which a 0-100 field satisfies unconditionally.
+        # What has to hold is that the available lanes did the work: the score
+        # is bounded by what they could contribute, and at least one ran.
+        available = [lane for lane in behavioural["lanes"] if lane["available"]]
+        assert available
+        assert behavioural["score"] == sum(lane["contribution"] for lane in available)
 
     def test_the_ceiling_excludes_the_lanes_that_did_not_run(self, behavioural):
         """Without this, most of what was measurable reads as a low score."""
