@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import os
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from cakradana.serving.schemas import (
     BatchItemResult,
@@ -32,6 +34,21 @@ from cakradana.serving.service import ScoringService, ServiceNotReady
 TOKEN_ENV = "CAKRADANA_SERVICE_TOKEN"
 
 API_PREFIX = "/v1"
+
+#: Starlette renamed this constant; both spellings mean 422, and referring to
+#: the old one under the new library raises a deprecation warning on every
+#: validation failure. The number is the contract either way.
+UNPROCESSABLE = 422
+
+
+def _path(item: dict) -> str:
+    """A validation error's field, as the caller wrote it.
+
+    ``body`` is dropped from the front: the caller knows it sent a body, and
+    what it needs is which of its own keys was the problem.
+    """
+    parts = [str(part) for part in item.get("loc", ()) if part != "body"]
+    return ".".join(parts) or "body"
 
 
 def create_app(service: ScoringService | None = None) -> FastAPI:
@@ -79,6 +96,74 @@ def create_app(service: ScoringService | None = None) -> FastAPI:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="a valid service token is required",
             )
+
+    # -- error contract --------------------------------------------------
+
+    @app.exception_handler(RequestValidationError)
+    def invalid_request(_: Request, error: RequestValidationError) -> JSONResponse:
+        """Separate "I do not understand this field" from "this value is wrong".
+
+        A field the schema does not define means the caller is speaking a
+        different version of this contract, and every value in the request is
+        then suspect — including the ones that parsed. That is a 400. A missing
+        or malformed value in a request whose shape is right is a 422, and the
+        field is named so the caller does not have to guess which one.
+        """
+        unknown = [
+            _path(item) for item in error.errors() if item["type"] == "extra_forbidden"
+        ]
+        if unknown:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={
+                    "error": {
+                        "code": "unknown_field",
+                        "message": (
+                            "the request contains fields this contract does not "
+                            "define; it is refused rather than partly applied, "
+                            "because a caller sending unknown fields may be "
+                            "expecting behaviour this version does not have"
+                        ),
+                        "fields": unknown,
+                    }
+                },
+            )
+        return JSONResponse(
+            status_code=UNPROCESSABLE,
+            content={
+                "error": {
+                    "code": "invalid_request",
+                    "message": "the request could not be accepted as submitted",
+                    "fields": [_path(item) for item in error.errors()],
+                    "detail": [
+                        {"field": _path(item), "problem": item["msg"]}
+                        for item in error.errors()
+                    ],
+                }
+            },
+        )
+
+    @app.exception_handler(Exception)
+    def unhandled(_: Request, error: Exception) -> JSONResponse:
+        """Anything unforeseen is the server's fault, and says so.
+
+        Reporting an internal failure as a 4xx tells the caller to change its
+        request, which will not help, and hides the fault from anyone counting
+        server errors. The exception text is not returned: it is the one place
+        a stack detail or a donor's name could reach an unintended reader.
+        """
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "error": {
+                    "code": "internal_error",
+                    "message": (
+                        "the request could not be completed; this is a fault in "
+                        "the service and the request was not scored"
+                    ),
+                }
+            },
+        )
 
     # -- operational -----------------------------------------------------
 

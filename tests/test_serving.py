@@ -114,7 +114,10 @@ class TestContract:
         response = client.post(
             "/v1/score", headers=AUTH, json={"request_id": "r", "donation": payload}
         )
-        assert response.status_code == 422
+        # 400 rather than 422: an engineered feature is not a malformed value,
+        # it is a field this contract does not define, and a caller sending one
+        # is working from a different idea of what the service accepts.
+        assert response.status_code == 400
 
     def test_every_response_carries_its_versions(self, client):
         body = client.post(
@@ -136,6 +139,137 @@ class TestContract:
             "/v1/score", headers=AUTH, json={"request_id": "r", "donation": payload}
         )
         assert response.status_code == 422
+
+
+class TestErrorContract:
+    """What a caller can rely on when a request does not succeed.
+
+    A service that answers every failure the same way forces the caller to
+    guess whether to fix the request, retry it, or page somebody.
+    """
+
+    def test_a_missing_required_field_is_422_and_names_it(self, client):
+        payload = donation()
+        del payload["amount_idr"]
+        response = client.post("/v1/score", json={"request_id": "r", "donation": payload}, headers=AUTH)
+        assert response.status_code == 422
+        body = response.json()["error"]
+        assert body["code"] == "invalid_request"
+        assert "donation.amount_idr" in body["fields"]
+
+    def test_the_reason_accompanies_the_field(self, client):
+        response = client.post(
+            "/v1/score",
+            json={"request_id": "r", "donation": {**donation(), "amount_idr": -5}},
+            headers=AUTH,
+        )
+        assert response.status_code == 422
+        problems = {d["field"]: d["problem"] for d in response.json()["error"]["detail"]}
+        assert "donation.amount_idr" in problems
+        assert problems["donation.amount_idr"]
+
+    def test_an_unknown_field_is_400_rather_than_ignored(self, client):
+        """Silently dropping a field the caller sent is the failure mode that
+        matters: the caller believes it supplied something and is told the
+        request succeeded."""
+        response = client.post(
+            "/v1/score",
+            json={"request_id": "r", "donation": {**donation(), "donor_occupation": "pengusaha"}},
+            headers=AUTH,
+        )
+        assert response.status_code == 400
+        body = response.json()["error"]
+        assert body["code"] == "unknown_field"
+        assert "donation.donor_occupation" in body["fields"]
+
+    def test_a_misspelled_field_is_reported_as_unknown_not_as_missing(self, client):
+        payload = donation()
+        payload["ammount_idr"] = payload.pop("amount_idr")
+        response = client.post("/v1/score", json={"request_id": "r", "donation": payload}, headers=AUTH)
+        assert response.status_code == 400
+        assert "donation.ammount_idr" in response.json()["error"]["fields"]
+
+    def test_an_internal_failure_is_a_5xx_not_a_4xx(self, service, calendar):
+        """A fault in the service reported as a 400 tells the caller to change
+        its request, which will not help, and hides the fault from anyone
+        counting server errors."""
+
+        def broken(*_args, **_kwargs):
+            raise RuntimeError("the rule engine fell over")
+
+        service.score = broken
+        client = TestClient(create_app(service), raise_server_exceptions=False)
+        response = client.post(
+            "/v1/score", json={"request_id": "r", "donation": donation()}, headers=AUTH
+        )
+        assert response.status_code >= 500
+        assert response.json()["error"]["code"] == "internal_error"
+
+    def test_an_internal_failure_returns_nothing_about_itself(self, service):
+        def broken(*_args, **_kwargs):
+            raise RuntimeError("donor Budi Santoso at /srv/cakradana/rules.py:214")
+
+        service.score = broken
+        client = TestClient(create_app(service), raise_server_exceptions=False)
+        response = client.post(
+            "/v1/score", json={"request_id": "r", "donation": donation()}, headers=AUTH
+        )
+        assert "Budi" not in response.text
+        assert "rules.py" not in response.text
+
+
+class TestDegradedLanes:
+    """A score assembled from less than the full picture, and marked as such.
+
+    This is the state the deployed service is actually in: no model is
+    promoted, so the classifier lane does not run. The response has to say so,
+    or a 7 out of a possible 30 is read as a 7 out of 100.
+    """
+
+    @pytest.fixture
+    def behavioural(self, client) -> dict:
+        response = client.post(
+            "/v1/score", json={"request_id": "r", "donation": donation()}, headers=AUTH
+        )
+        assert response.status_code == 200
+        return response.json()["result"]["behavioural"]
+
+    def test_a_score_assembled_without_every_lane_says_so(self, behavioural):
+        assert behavioural["degraded"] is True
+
+    def test_each_absent_lane_says_why_it_did_not_run(self, behavioural):
+        """"Unavailable" without a reason is indistinguishable from a lane that
+        ran and found nothing."""
+        absent = [lane for lane in behavioural["lanes"] if not lane["available"]]
+        assert absent
+        for lane in absent:
+            assert lane["unavailable_reason"]
+
+    def test_the_score_is_still_produced(self, behavioural):
+        """A partial answer beats none: the rules and the graph lane have
+        results whether or not a model was ever trained."""
+        assert behavioural["score"] >= 0
+        assert any(lane["available"] for lane in behavioural["lanes"])
+
+    def test_the_ceiling_excludes_the_lanes_that_did_not_run(self, behavioural):
+        """Without this, most of what was measurable reads as a low score."""
+        available = sum(
+            lane["max_contribution"]
+            for lane in behavioural["lanes"]
+            if lane["available"]
+        )
+        assert behavioural["attainable_max"] == available
+        assert behavioural["attainable_max"] < 100
+
+    def test_an_absent_lane_contributes_nothing_rather_than_zero_risk(
+        self, behavioural
+    ):
+        """The distinction the ceiling carries: a lane that scored 0 and a lane
+        that never ran both add 0, and only one of them is evidence."""
+        for lane in behavioural["lanes"]:
+            if not lane["available"]:
+                assert lane["contribution"] == 0
+                assert lane["reasons"] == []
 
 
 class TestScoring:
